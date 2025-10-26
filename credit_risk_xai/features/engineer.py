@@ -402,12 +402,12 @@ def build_feature_matrix(
     base_df = pd.read_parquet(base_path)
     macro_df = pd.read_parquet(macro_path) if macro_path.exists() else None
 
-    logger.info("Engineering features from interim dataset (rows=%d)", len(base_df))
+    logger.info("Engineering features from interim dataset (rows={:,})", len(base_df))
     engineered_df = create_engineered_features(base_df, macro_df=macro_df)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     engineered_df.to_parquet(output_path, engine="pyarrow", compression="snappy", index=False)
-    logger.success("Feature matrix saved to %s (rows=%d)", output_path, len(engineered_df))
+    logger.success("Feature matrix saved to {} (rows={:,})", output_path, len(engineered_df))
     return output_path
 
 

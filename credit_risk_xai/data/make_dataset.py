@@ -113,7 +113,7 @@ def generate_serrano_base(
     interim_df.to_parquet(output_path, engine="pyarrow", compression="snappy", index=False)
 
     logger.success(
-        "Interim dataset built: %s (raw rows=%d, filtered rows=%d)",
+        "Interim dataset built: {} (raw rows={:,}, filtered rows={:,})",
         output_path,
         total_rows,
         len(interim_df),
