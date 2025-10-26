@@ -56,6 +56,7 @@ def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     Optimize column data types to reduce memory usage.
 
     Conversions:
+    - Identifiers (ORGNR, ser_year) → Int64/Int32
     - Binary indicators (0/1) → Int8
     - Small integer codes → Int8/Int32
     - Financial data (kSEK, ratios) → float32
@@ -65,54 +66,40 @@ def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     """
     logger.debug("Optimizing data types...")
 
+    # Phase 0: Core identifiers
+    df["ORGNR"] = pd.to_numeric(df["ORGNR"], errors="coerce").astype("Int64")
+    df["ser_year"] = pd.to_numeric(df["ser_year"], errors="coerce").astype("Int32")
+
     # Phase 1: Binary indicators (0/1) → Int8
     binary_cols = ["bol_konkurs", "ser_aktiv", "ser_nystartat"]
     for col in binary_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int8")
+        df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int8")
 
     # Phase 2: Small ordinal/categorical integers
-    # ser_stklf: employment size class (0-9)
-    if "ser_stklf" in df.columns:
-        df["ser_stklf"] = pd.to_numeric(df["ser_stklf"], errors="coerce").astype("Int8")
-
-    # bslov_antanst: employee count (can be large)
-    if "bslov_antanst" in df.columns:
-        df["bslov_antanst"] = pd.to_numeric(df["bslov_antanst"], errors="coerce").astype("Int32")
-
-    # Industry/sector codes (prepare for categorical)
-    # bransch_sni071_konv: 5-digit SNI code (already converted to Int32 above)
-    # bransch_borsbransch_konv: 11 sector categories
-    if "bransch_borsbransch_konv" in df.columns:
-        df["bransch_borsbransch_konv"] = pd.to_numeric(
-            df["bransch_borsbransch_konv"], errors="coerce"
-        ).astype("Int8")
-
-    # ser_laen: county code (1-21)
-    if "ser_laen" in df.columns:
-        df["ser_laen"] = pd.to_numeric(df["ser_laen"], errors="coerce").astype("Int8")
-
-    # knc_kncfall: group situation indicator
-    if "knc_kncfall" in df.columns:
-        df["knc_kncfall"] = pd.to_numeric(df["knc_kncfall"], errors="coerce").astype("Int8")
+    df["ser_stklf"] = pd.to_numeric(df["ser_stklf"], errors="coerce").astype("Int8")
+    df["bslov_antanst"] = pd.to_numeric(df["bslov_antanst"], errors="coerce").astype("Int32")
+    df["bransch_sni071_konv"] = pd.to_numeric(df["bransch_sni071_konv"], errors="coerce").astype("Int32")
+    df["bransch_borsbransch_konv"] = pd.to_numeric(df["bransch_borsbransch_konv"], errors="coerce").astype("Int8")
+    df["ser_laen"] = pd.to_numeric(df["ser_laen"], errors="coerce").astype("Int8")
+    df["knc_kncfall"] = pd.to_numeric(df["knc_kncfall"], errors="coerce").astype("Int8")
 
     # Phase 3: Downcast all financial data to float32
     # Financial ratios (ny_* columns)
     ny_cols = [col for col in df.columns if col.startswith("ny_")]
     for col in ny_cols:
-        if col in df.columns and df[col].dtype == "float64":
+        if df[col].dtype == "float64":
             df[col] = df[col].astype("float32")
 
     # Income statement (rr_* columns) - all in kSEK
     rr_cols = [col for col in df.columns if col.startswith("rr")]
     for col in rr_cols:
-        if col in df.columns and df[col].dtype == "float64":
+        if df[col].dtype == "float64":
             df[col] = df[col].astype("float32")
 
     # Balance sheet (br_* columns) - all in kSEK
     br_cols = [col for col in df.columns if col.startswith("br")]
     for col in br_cols:
-        if col in df.columns and df[col].dtype == "float64":
+        if df[col].dtype == "float64":
             df[col] = df[col].astype("float32")
 
     logger.debug("Data type optimization completed")
@@ -122,9 +109,7 @@ def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
 def _ensure_categories(df: pd.DataFrame, columns: Iterable[str]) -> pd.DataFrame:
     """Convert specified columns to categorical type."""
     for col in columns:
-        if col in df.columns:
-            # Convert to category (the column should already be the right integer type)
-            df[col] = df[col].astype("category")
+        df[col] = df[col].astype("category")
     return df
 
 
@@ -165,18 +150,7 @@ def generate_serrano_base(
         df = df[df["ser_jurform"] == 49.0]
         df.drop(columns=["ser_jurform"], inplace=True)
 
-        # read_stata handles datetime conversion automatically
-        # Ensure ORGNR and ser_year have correct types first
-        df["ser_year"] = pd.to_numeric(df["ser_year"], errors="coerce").astype("Int32")
-        df["ORGNR"] = pd.to_numeric(df["ORGNR"], errors="coerce").astype("Int64")
-
-        # Optimize data types BEFORE computing derived features
-        # This includes bransch_sni071_konv conversion to Int32
-        if "bransch_sni071_konv" in df.columns:
-            df["bransch_sni071_konv"] = pd.to_numeric(
-                df["bransch_sni071_konv"], errors="coerce"
-            ).astype("Int32")
-
+        # Optimize all data types in one place
         df = _optimize_dtypes(df)
 
         # Compute derived features (using optimized dtypes)
