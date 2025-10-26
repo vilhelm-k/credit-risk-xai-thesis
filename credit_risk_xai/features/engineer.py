@@ -356,19 +356,21 @@ def create_engineered_features(
     # Beta > 1: Cyclical (high risk), Beta < 1: Defensive (low risk)
     # Note: This is the OLS slope coefficient from regressing revenue growth on GDP growth
 
-    rolling_cov = (
-        df["rr01_ntoms_yoy_pct"].groupby(level=0, group_keys=False)
-        .rolling(window=5, min_periods=4)
-        .cov(df["gdp_growth"])
-    )
-    rolling_var_gdp = (
-        df["gdp_growth"].groupby(level=0, group_keys=False)
-        .rolling(window=5, min_periods=4)
-        .var()
-    )
+    def _rolling_beta_per_company(group_df):
+        """Compute rolling 5-year beta for a single company."""
+        rev = group_df["rr01_ntoms_yoy_pct"]
+        gdp = group_df["gdp_growth"]
 
-    df["revenue_beta_gdp_5y"] = (rolling_cov / rolling_var_gdp).replace([np.inf, -np.inf], np.nan)
-    logger.info("Macro indicators merged")
+        # Rolling covariance and variance
+        rolling_cov = rev.rolling(window=5, min_periods=4).cov(gdp)
+        rolling_var_gdp = gdp.rolling(window=5, min_periods=4).var()
+
+        # Beta = cov / var, handling division by zero
+        beta = rolling_cov / rolling_var_gdp
+        return beta.replace([np.inf, -np.inf], np.nan)
+
+    df["revenue_beta_gdp_5y"] = df.groupby(level=0, group_keys=False).apply(_rolling_beta_per_company)
+    logger.info("Macro indicators merged (including revenue beta)")
 
     df.reset_index(drop=True, inplace=True)
 
