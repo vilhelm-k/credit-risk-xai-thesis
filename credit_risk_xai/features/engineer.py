@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import typer
 from loguru import logger
+from numba import njit
 
 from credit_risk_xai.config import (
     BASE_CACHE_PATH,
@@ -37,33 +38,44 @@ def _safe_div(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
     return result.replace([np.inf, -np.inf], np.nan)
 
 
+@njit(cache=True)
+def _rolling_slope_kernel(values: np.ndarray) -> float:
+    """Compute slope of the linear trend for a dense 1D window with possible NaNs."""
+    count = 0
+    x_sum = 0.0
+    x2_sum = 0.0
+    y_sum = 0.0
+    xy_sum = 0.0
+
+    for idx in range(values.shape[0]):
+        y_val = values[idx]
+        if np.isnan(y_val):
+            continue
+
+        x_val = float(idx)
+        count += 1
+        x_sum += x_val
+        x2_sum += x_val * x_val
+        y_sum += y_val
+        xy_sum += x_val * y_val
+
+    if count < 2:
+        return np.nan
+
+    denominator = x2_sum - (x_sum * x_sum) / count
+    if denominator == 0.0:
+        return np.nan
+
+    numerator = xy_sum - (x_sum * y_sum) / count
+    return numerator / denominator
+
+
 def _rolling_slope(series: pd.Series, window: int) -> pd.Series:
-    """Vectorized rolling slope calculation using fast linear regression formula."""
-    def _slope_vectorized(values: np.ndarray) -> float:
-        if np.isnan(values).all():
-            return np.nan
-        mask = ~np.isnan(values)
-        if mask.sum() < 2:
-            return np.nan
-
-        # Fast vectorized linear regression: slope = cov(x,y) / var(x)
-        x = np.arange(len(values))
-        x_masked = x[mask]
-        y_masked = values[mask]
-
-        x_mean = x_masked.mean()
-        y_mean = y_masked.mean()
-
-        # Slope = sum((x - x_mean)(y - y_mean)) / sum((x - x_mean)^2)
-        numerator = np.sum((x_masked - x_mean) * (y_masked - y_mean))
-        denominator = np.sum((x_masked - x_mean) ** 2)
-
-        return numerator / denominator if denominator != 0 else np.nan
-
+    """Rolling slope using a compiled numba kernel for memory-efficient performance."""
     return (
         series.groupby(level=0, group_keys=False)
         .rolling(window=window, min_periods=window)
-        .apply(_slope_vectorized, raw=True)
+        .apply(_rolling_slope_kernel, raw=True, engine="numba")
     )
 
 
@@ -83,25 +95,48 @@ def _rolling_std(series: pd.Series, window: int) -> pd.Series:
     )
 
 
+@njit(cache=True)
+def _rolling_drawdown_kernel(values: np.ndarray) -> float:
+    """Return minimum drawdown (value / peak - 1) within a window, ignoring NaNs."""
+    has_value = False
+    has_drawdown = False
+    run_max = 0.0
+    min_drawdown = 0.0
+
+    for idx in range(values.shape[0]):
+        val = values[idx]
+        if np.isnan(val):
+            continue
+
+        if not has_value:
+            run_max = val
+            has_value = True
+        else:
+            if val > run_max:
+                run_max = val
+
+        if run_max == 0.0:
+            drawdown = np.nan
+        else:
+            drawdown = val / run_max - 1.0
+
+        if not np.isnan(drawdown):
+            if not has_drawdown or drawdown < min_drawdown:
+                min_drawdown = drawdown
+                has_drawdown = True
+
+    if not has_drawdown:
+        return np.nan
+
+    return min_drawdown
+
+
 def _rolling_drawdown(series: pd.Series, window: int) -> pd.Series:
-    """Optimized rolling drawdown using vectorized operations."""
-    def _max_drawdown_fast(values: np.ndarray) -> float:
-        if np.isnan(values).all():
-            return np.nan
-        # Handle NaN values
-        valid_mask = ~np.isnan(values)
-        if not valid_mask.any():
-            return np.nan
-
-        valid_values = values[valid_mask]
-        running_max = np.maximum.accumulate(valid_values)
-        drawdowns = valid_values / running_max - 1.0
-        return drawdowns.min()
-
+    """Optimized rolling drawdown using a compiled kernel to avoid Python-overhead."""
     return (
         series.groupby(level=0, group_keys=False)
         .rolling(window=window, min_periods=window)
-        .apply(_max_drawdown_fast, raw=True)
+        .apply(_rolling_drawdown_kernel, raw=True, engine="numba")
     )
 
 
@@ -111,6 +146,42 @@ def _compute_cagr(series: pd.Series, periods: int) -> pd.Series:
     mask = (series > 0) & (shifted > 0)
     cagr = ratio.pow(1 / periods) - 1
     return cagr.where(mask, np.nan)
+
+
+def _rolling_beta(
+    dependent: pd.Series,
+    benchmark: pd.Series,
+    window: int,
+    min_periods: Optional[int] = None,
+) -> pd.Series:
+    """Rolling OLS beta of dependent versus benchmark for each entity."""
+    if min_periods is None:
+        min_periods = window
+
+    valid_mask = (~dependent.isna()) & (~benchmark.isna())
+    if not valid_mask.any():
+        return pd.Series(np.nan, index=dependent.index)
+
+    dependent_valid = dependent.where(valid_mask)
+    benchmark_valid = benchmark.where(valid_mask)
+
+    group = lambda s: s.groupby(level=0, group_keys=False)
+
+    count = group(valid_mask).rolling(window=window, min_periods=1).sum()
+    sum_dep = group(dependent_valid).rolling(window=window, min_periods=1).sum()
+    sum_bench = group(benchmark_valid).rolling(window=window, min_periods=1).sum()
+    sum_cross = group(dependent_valid * benchmark_valid).rolling(window=window, min_periods=1).sum()
+    sum_bench_sq = group(benchmark_valid.pow(2)).rolling(window=window, min_periods=1).sum()
+
+    numerator = sum_cross - (sum_dep * sum_bench) / count
+    denominator = sum_bench_sq - (sum_bench * sum_bench) / count
+
+    denominator = denominator.mask(denominator.abs() < 1e-12)
+    beta = numerator / denominator
+    beta = beta.where(count >= min_periods)
+    beta = beta.replace([np.inf, -np.inf], np.nan)
+
+    return beta.droplevel(0).reindex(dependent.index)
 
 
 # -----------------------------------------------------------------------------
@@ -128,7 +199,7 @@ def create_engineered_features(
     df["ser_stklf"] = df["ser_stklf"].replace(9, pd.NA)
 
     # Set index without dropping columns (we'll drop at the end if needed)
-    df.set_index(["ORGNR", "ser_year"], drop=True, inplace=True)
+    df.set_index(["ORGNR", "ser_year"], drop=False, inplace=True)
     required_columns = set(
         KEPT_RAW_COLS + RR_SOURCE_COLS + BR_SOURCE_COLS + NY_COLS + ["credit_event"]
     )
@@ -356,20 +427,14 @@ def create_engineered_features(
     # Beta > 1: Cyclical (high risk), Beta < 1: Defensive (low risk)
     # Note: This is the OLS slope coefficient from regressing revenue growth on GDP growth
 
-    def _rolling_beta_per_company(group_df):
-        """Compute rolling 5-year beta for a single company."""
-        rev = group_df["rr01_ntoms_yoy_pct"]
-        gdp = group_df["gdp_growth"]
+    logger.info("Calculating rolling revenue beta (streaming sums)")
+    df["revenue_beta_gdp_5y"] = _rolling_beta(
+        df["rr01_ntoms_yoy_pct"],
+        df["gdp_growth"],
+        window=5,
+        min_periods=4,
+    )
 
-        # Rolling covariance and variance
-        rolling_cov = rev.rolling(window=5, min_periods=4).cov(gdp)
-        rolling_var_gdp = gdp.rolling(window=5, min_periods=4).var()
-
-        # Beta = cov / var, handling division by zero
-        beta = rolling_cov / rolling_var_gdp
-        return beta.replace([np.inf, -np.inf], np.nan)
-
-    df["revenue_beta_gdp_5y"] = df.groupby(level=0, group_keys=False).apply(_rolling_beta_per_company)
     logger.info("Macro indicators merged (including revenue beta)")
 
     df.reset_index(drop=True, inplace=True)
