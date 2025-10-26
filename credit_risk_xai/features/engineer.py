@@ -351,13 +351,23 @@ def create_engineered_features(
         df["rr07_rorresul_yoy_pct"] - df["gdp_growth"]
     )
 
-    corr = (
-        df["rr01_ntoms_yoy_pct"]
-        .groupby(level=0, group_keys=False)
+    # Compute revenue beta (cyclicality): beta = cov(revenue, gdp) / var(gdp)
+    # Beta interpretation: For every 1% GDP growth, revenue grows by beta%
+    # Beta > 1: Cyclical (high risk), Beta < 1: Defensive (low risk)
+    # Note: This is the OLS slope coefficient from regressing revenue growth on GDP growth
+
+    rolling_cov = (
+        df["rr01_ntoms_yoy_pct"].groupby(level=0, group_keys=False)
         .rolling(window=5, min_periods=4)
-        .corr(df["gdp_growth"])
+        .cov(df["gdp_growth"])
     )
-    df["correlation_revenue_gdp_5y"] = corr.reset_index(level=0, drop=True)
+    rolling_var_gdp = (
+        df["gdp_growth"].groupby(level=0, group_keys=False)
+        .rolling(window=5, min_periods=4)
+        .var()
+    )
+
+    df["revenue_beta_gdp_5y"] = (rolling_cov / rolling_var_gdp).replace([np.inf, -np.inf], np.nan)
     logger.info("Macro indicators merged")
 
     df.reset_index(drop=True, inplace=True)

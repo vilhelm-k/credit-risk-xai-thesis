@@ -100,7 +100,7 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 | `real_revenue_growth` | `rr01_ntoms_yoy_pct - inflation_yoy`. |
 | `revenue_vs_gdp` | `rr01_ntoms_yoy_pct - gdp_growth`. |
 | `profit_vs_gdp` | `rr07_rorresul_yoy_pct - gdp_growth`. |
-| `correlation_revenue_gdp_5y` | Rolling 5-year correlation between revenue YoY growth and GDP growth (requires ≥4 overlapping points). |
+| `revenue_beta_gdp_5y` | Rolling 5-year beta (cyclicality) of revenue growth vs. GDP growth. Beta = Cov(revenue, GDP) / Var(GDP). Interpretation: β > 1 = cyclical (high risk), β < 1 = defensive (low risk). |
 
 ---
 
