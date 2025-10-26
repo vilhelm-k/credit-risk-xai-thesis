@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 import typer
 from loguru import logger
-from numba import jit
 
 from credit_risk_xai.config import (
     BASE_CACHE_PATH,
@@ -112,37 +111,6 @@ def _compute_cagr(series: pd.Series, periods: int) -> pd.Series:
     mask = (series > 0) & (shifted > 0)
     cagr = ratio.pow(1 / periods) - 1
     return cagr.where(mask, np.nan)
-
-
-@jit(nopython=True)
-def _streak_numba(condition_values: np.ndarray) -> np.ndarray:
-    """Numba-compiled streak counter for maximum performance."""
-    out = np.zeros(len(condition_values), dtype=np.float64)
-    count = 0.0
-    for idx in range(len(condition_values)):
-        if np.isnan(condition_values[idx]):
-            out[idx] = np.nan
-            count = 0.0
-        elif condition_values[idx]:
-            count += 1.0
-            out[idx] = count
-        else:
-            count = 0.0
-            out[idx] = 0.0
-    return out
-
-
-def _streak(series: pd.Series, comparator) -> pd.Series:
-    """Optimized streak calculation using numba-compiled function."""
-    diffs = series.groupby(level=0).diff()
-
-    def _streak_group(group: pd.Series) -> pd.Series:
-        group_diffs = diffs.loc[group.index].to_numpy()
-        group_cond = comparator(group_diffs)
-        result = _streak_numba(group_cond)
-        return pd.Series(result, index=group.index)
-
-    return series.groupby(level=0, group_keys=False).apply(_streak_group)
 
 
 # -----------------------------------------------------------------------------
@@ -325,20 +293,7 @@ def create_engineered_features(
         "equity_drawdown_5y": _rolling_drawdown(df["br10_eksu"], window=5),
     })
 
-    logger.info("Computing streak indicators")
-    new_features.update({
-        "ny_rormarg_down_streak": _streak(
-            df["ny_rormarg"], lambda diff: diff < 0
-        ),
-        "ny_skuldgrd_up_streak": _streak(
-            df["ny_skuldgrd"], lambda diff: diff > 0
-        ),
-        "ratio_cash_liquidity_down_streak": _streak(
-            df["ratio_cash_liquidity"], lambda diff: diff < 0
-        ),
-    })
-
-    # Join all rolling and streak features at once
+    # Join all rolling features at once
     df = df.join(pd.DataFrame(new_features, index=df.index))
     new_features.clear()
 

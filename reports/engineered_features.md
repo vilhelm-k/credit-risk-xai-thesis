@@ -77,14 +77,6 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 | `ratio_cash_liquidity_avg_2y`, `ratio_cash_liquidity_avg_5y` | 2 / 5 years | Rolling mean quick ratio. |
 | `revenue_drawdown_5y`, `equity_drawdown_5y` | 5 years | Max drawdown of revenue / equity inside rolling window. |
 
-### Streak Indicators
-
-| Feature | Definition |
-| --- | --- |
-| `ny_rormarg_down_streak` | Consecutive years with declining operating margin. |
-| `ny_skuldgrd_up_streak` | Consecutive years with leverage increasing. |
-| `ratio_cash_liquidity_down_streak` | Consecutive years with declining quick ratio. |
-
 ## Credit Event History
 
 | Feature | Definition / Purpose |
