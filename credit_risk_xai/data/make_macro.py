@@ -19,7 +19,7 @@ def build_macro_summary(
     Transform raw macro CSVs into an annual summary table and cache to parquet.
     """
     if output_path.exists() and not force:
-        logger.info("Macro summary already exists at %s (use --force to rebuild)", output_path)
+        logger.info("Macro summary already exists at {} (use --force to rebuild)", output_path)
         return output_path
 
     data_dir = Path(data_dir)

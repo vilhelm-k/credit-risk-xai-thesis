@@ -60,7 +60,7 @@ def generate_serrano_base(
         - Persist to Parquet for downstream feature engineering
     """
     if output_path.exists() and not force:
-        logger.info("Interim base already exists at %s (use --force to rebuild)", output_path)
+        logger.info("Interim base already exists at {} (use --force to rebuild)", output_path)
         return output_path
 
     raw_files = sorted(glob.glob(str(raw_dir / "serrano*.dta")))

@@ -88,7 +88,8 @@ def _compute_cagr(series: pd.Series, periods: int) -> pd.Series:
     shifted = series.groupby(level=0).shift(periods)
     ratio = _safe_div(series, shifted)
     mask = (series > 0) & (shifted > 0)
-    return np.where(mask, np.power(ratio, 1 / periods) - 1, np.nan)
+    cagr = ratio.pow(1 / periods) - 1
+    return cagr.where(mask, np.nan)
 
 
 def _streak(series: pd.Series, comparator) -> pd.Series:
@@ -134,6 +135,7 @@ def create_engineered_features(
 
     group = working_df.groupby(level=0, group_keys=False)
 
+    logger.info("Computing cost structure and profitability ratios")
     ratio_cols = {
         "ratio_personnel_cost": _safe_div(
             working_df["rr04_perskos"], working_df["rr01_ntoms"]
@@ -170,6 +172,7 @@ def create_engineered_features(
     working_df = working_df.join(pd.DataFrame(ratio_cols, index=working_df.index))
     group = working_df.groupby(level=0, group_keys=False)
 
+    logger.info("Computing liquidity and working-capital efficiencies")
     liquidity_cols = {
         "ratio_cash_liquidity": _safe_div(
             working_df["br07b_kabasu"] + working_df["br07a_kplacsu"],
@@ -189,6 +192,7 @@ def create_engineered_features(
     working_df = working_df.join(pd.DataFrame(liquidity_cols, index=working_df.index))
     group = working_df.groupby(level=0, group_keys=False)
 
+    logger.info("Computing capital structure and payout ratios")
     total_debt = working_df["br13_ksksu"] + working_df["br15_lsksu"]
     capital_cols = {
         "ratio_short_term_debt_share": _safe_div(working_df["br13_ksksu"], total_debt),
@@ -211,6 +215,7 @@ def create_engineered_features(
     working_df = working_df.join(pd.DataFrame(capital_cols, index=working_df.index))
     group = working_df.groupby(level=0, group_keys=False)
 
+    logger.info("Computing year-over-year deltas and immediate trends")
     trend_cols = {}
     for col in ["rr01_ntoms", "rr07_rorresul", "br09_tillgsu"]:
         trend_cols[f"{col}_yoy_pct"] = group[col].pct_change(fill_method=None)
@@ -244,6 +249,7 @@ def create_engineered_features(
         working_df[target] = _compute_cagr(working_df[source], window)
     group = working_df.groupby(level=0, group_keys=False)
 
+    logger.info("Computing rolling slopes, volatility, averages, and drawdowns")
     slope_cols = {
         "ny_rormarg_trend_3y": _rolling_slope(working_df["ny_rormarg"], window=3),
         "ny_skuldgrd_trend_3y": _rolling_slope(working_df["ny_skuldgrd"], window=3),
@@ -282,6 +288,7 @@ def create_engineered_features(
     working_df = working_df.join(pd.DataFrame(slope_cols, index=working_df.index))
     group = working_df.groupby(level=0, group_keys=False)
 
+    logger.info("Computing streak indicators")
     working_df = working_df.join(
         pd.DataFrame(
             {
@@ -326,38 +333,43 @@ def create_engineered_features(
     )
     working_df["ever_failed"] = (working_df["event_count_total"] > 0).astype("Int8")
 
-    if macro_df is not None and not macro_df.empty:
-        macro_aligned = macro_df.set_index("ser_year")
-        for col in macro_aligned.columns:
-            working_df[col] = working_df.index.get_level_values(1).map(macro_aligned[col])
+    logger.info("Credit event history features computed")
 
-        if "inflation_yoy" in working_df:
-            working_df["real_revenue_growth"] = (
-                working_df["rr01_ntoms_yoy_pct"] - working_df["inflation_yoy"]
-            )
+    if macro_df is None:
+        raise ValueError("Macro dataframe is required. Run the macro preprocessing step first.")
 
-        if "gdp_growth" in working_df:
-            working_df["revenue_vs_gdp"] = (
-                working_df["rr01_ntoms_yoy_pct"] - working_df["gdp_growth"]
-            )
-            working_df["profit_vs_gdp"] = (
-                working_df["rr07_rorresul_yoy_pct"] - working_df["gdp_growth"]
-            )
+    logger.info("Merging macroeconomic indicators and derived comparisons")
+    macro_aligned = macro_df.set_index("ser_year")
+    for col in macro_aligned.columns:
+        working_df[col] = working_df.index.get_level_values(1).map(macro_aligned[col])
 
-        if ("rr01_ntoms_yoy_pct" in working_df.columns) and ("gdp_growth" in working_df.columns):
-            corr = (
-                working_df["rr01_ntoms_yoy_pct"]
-                .groupby(level=0, group_keys=False)
-                .rolling(window=5, min_periods=4)
-                .corr(working_df["gdp_growth"])
-            )
-            working_df["correlation_revenue_gdp_5y"] = corr.reset_index(level=0, drop=True)
+    working_df["real_revenue_growth"] = (
+        working_df["rr01_ntoms_yoy_pct"] - working_df["inflation_yoy"]
+    )
+    working_df["revenue_vs_gdp"] = (
+        working_df["rr01_ntoms_yoy_pct"] - working_df["gdp_growth"]
+    )
+    working_df["profit_vs_gdp"] = (
+        working_df["rr07_rorresul_yoy_pct"] - working_df["gdp_growth"]
+    )
+
+    corr = (
+        working_df["rr01_ntoms_yoy_pct"]
+        .groupby(level=0, group_keys=False)
+        .rolling(window=5, min_periods=4)
+        .corr(working_df["gdp_growth"])
+    )
+    working_df["correlation_revenue_gdp_5y"] = corr.reset_index(level=0, drop=True)
+    logger.info("Macro indicators merged")
 
     working_df = working_df.reset_index(drop=True)
 
     if drop_raw_sources:
         drop_cols = [col for col in RR_SOURCE_COLS + BR_SOURCE_COLS if col in working_df.columns]
         working_df = working_df.drop(columns=drop_cols)
+        logger.debug("Dropped {} raw source columns", len(drop_cols))
+
+    logger.success("Feature engineering completed (rows={:,}, columns={})", len(working_df), working_df.shape[1])
 
     return working_df
 
@@ -391,16 +403,20 @@ def build_feature_matrix(
     Load interim caches, engineer features, and persist to processed parquet.
     """
     if output_path.exists() and not force:
-        logger.info("Feature cache already exists at %s (use --force to rebuild)", output_path)
+        logger.info("Feature cache already exists at {} (use --force to rebuild)", output_path)
         return output_path
 
     if not base_path.exists():
         raise FileNotFoundError(
-            f"Interim Serrano dataset not found: {base_path}. Run make_dataset first."
+            f"Interim Serrano dataset not found: {base_path}. Run the raw preprocessing step first."
+        )
+    if not macro_path.exists():
+        raise FileNotFoundError(
+            f"Macro summary not found: {macro_path}. Run the macro preprocessing step first."
         )
 
     base_df = pd.read_parquet(base_path)
-    macro_df = pd.read_parquet(macro_path) if macro_path.exists() else None
+    macro_df = pd.read_parquet(macro_path)
 
     logger.info("Engineering features from interim dataset (rows={:,})", len(base_df))
     engineered_df = create_engineered_features(base_df, macro_df=macro_df)
