@@ -181,9 +181,10 @@ def generate_serrano_base(
 
         # Compute derived features (using optimized dtypes)
         df["company_age"] = df["ser_year"] - df["ser_regdat"].dt.year
-        df["credit_event"] = (
-            ((df["bol_konkurs"] == 1) | (df["bol_q80dat"].notna())).astype("int8")
-        )
+
+        # credit_event: Use Int8 (nullable) to handle NA values from bol_konkurs
+        credit_event_mask = (df["bol_konkurs"] == 1) | (df["bol_q80dat"].notna())
+        df["credit_event"] = credit_event_mask.astype("Int8")
 
         # Vectorized SME classification (much faster than apply)
         df["sme_category"] = classify_sme_eu_vectorized(

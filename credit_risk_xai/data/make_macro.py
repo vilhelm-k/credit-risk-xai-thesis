@@ -58,8 +58,8 @@ def _load_gdp(path: Path) -> pd.DataFrame:
             "0010 GDP at market prices": "gdp_growth",
         }
     )
-    df["ser_year"] = pd.to_numeric(df["ser_year"], errors="coerce").astype("Int64")
-    df["gdp_growth"] = pd.to_numeric(df["gdp_growth"], errors="coerce")
+    df["ser_year"] = pd.to_numeric(df["ser_year"], errors="coerce").astype("Int32")
+    df["gdp_growth"] = pd.to_numeric(df["gdp_growth"], errors="coerce").astype("float32")
     df = df.dropna(subset=["ser_year", "gdp_growth"])
     df["gdp_growth_3y_avg"] = df["gdp_growth"].rolling(window=3, min_periods=2).mean()
     return df[["ser_year", "gdp_growth", "gdp_growth_3y_avg"]]
@@ -82,10 +82,11 @@ def _load_rates(path: Path) -> pd.DataFrame:
         & (df["agreement"].str.contains("new and renegotiated agreements"))
     )
     df = df.loc[selector].copy()
-    df["ser_year"] = df["period"].str.slice(0, 4).astype(int)
+    df["ser_year"] = df["period"].str.slice(0, 4).astype("Int32")
 
     numeric_cols = ["All accounts", "rate_short", "rate_medium", "rate_long"]
-    df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce").astype("float32")
 
     annual = (
         df.groupby("ser_year")[numeric_cols]
@@ -109,8 +110,8 @@ def _load_rates(path: Path) -> pd.DataFrame:
 def _load_inflation(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
     df = df.rename(columns={df.columns[0]: "period", df.columns[1]: "kpif_index"})
-    df["ser_year"] = df["period"].str.slice(0, 4).astype(int)
-    df["kpif_index"] = pd.to_numeric(df["kpif_index"], errors="coerce")
+    df["ser_year"] = df["period"].str.slice(0, 4).astype("Int32")
+    df["kpif_index"] = pd.to_numeric(df["kpif_index"], errors="coerce").astype("float32")
 
     annual = (
         df.groupby("ser_year")["kpif_index"]
@@ -131,8 +132,8 @@ def _load_unemployment(path: Path) -> pd.DataFrame:
     df = df.rename(columns={"år": "ser_year", "arbetslösa": "unemp_rate"})
     df = df[df["kön"] == "totalt"]
     df = df[df["ålder"].str.startswith("totalt", na=False)]
-    df["ser_year"] = pd.to_numeric(df["ser_year"], errors="coerce").astype("Int64")
-    df["unemp_rate"] = pd.to_numeric(df["unemp_rate"], errors="coerce")
+    df["ser_year"] = pd.to_numeric(df["ser_year"], errors="coerce").astype("Int32")
+    df["unemp_rate"] = pd.to_numeric(df["unemp_rate"], errors="coerce").astype("float32")
     df = df.dropna(subset=["ser_year", "unemp_rate"])
     df = (
         df[["ser_year", "unemp_rate"]]
