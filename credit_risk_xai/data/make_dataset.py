@@ -67,14 +67,15 @@ def generate_serrano_base(
     if not raw_files:
         raise FileNotFoundError(f"No Serrano .dta files found under {raw_dir}")
 
-    logger.info("Building interim dataset from %d source files", len(raw_files))
+    logger.info("Building interim dataset from {} source files", len(raw_files))
     frames = []
     total_rows = 0
 
     for idx, path_str in enumerate(raw_files, start=1):
         path = Path(path_str)
-        logger.debug("Reading [%d/%d]: %s", idx, len(raw_files), path.name)
+        logger.info("[{}/{}] Loading {}", idx, len(raw_files), path.name)
         df = pd.read_stata(path, columns=COLS_TO_LOAD)
+        logger.debug("    Raw rows loaded: {:,}", len(df))
         total_rows += len(df)
 
         df = df[df["ser_jurform"] == 49.0].copy()
@@ -108,11 +109,7 @@ def generate_serrano_base(
     interim_df.sort_values(["ORGNR", "ser_year"], inplace=True)
 
     INTERIM_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    logger.info(
-        "Writing interim dataset (%d rows -> %s)",
-        len(interim_df),
-        output_path,
-    )
+    logger.info("Writing interim dataset with {:,} rows to {}", len(interim_df), output_path)
     interim_df.to_parquet(output_path, engine="pyarrow", compression="snappy", index=False)
 
     logger.success(
@@ -124,8 +121,8 @@ def generate_serrano_base(
     return output_path
 
 
-@app.command("serrano")
-def cli_generate_serrano_base(
+@app.command()
+def main(
     raw_dir: Path = typer.Option(RAW_DATA_DIR, help="Directory containing raw Serrano .dta files."),
     output_path: Path = typer.Option(BASE_CACHE_PATH, help="Destination parquet path."),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing cache."),

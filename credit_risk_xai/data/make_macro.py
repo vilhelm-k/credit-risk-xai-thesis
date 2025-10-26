@@ -26,13 +26,18 @@ def build_macro_summary(
     if not data_dir.exists():
         raise FileNotFoundError(f"Macro data directory not found: {data_dir}")
 
-    logger.info("Building macro summary from %s", data_dir)
-    frames = [
-        _load_gdp(data_dir / "000004KA_20251025-125856.csv"),
-        _load_rates(data_dir / "000004ZT_20251025-133456.csv"),
-        _load_inflation(data_dir / "000005HR_20251025-132523.csv"),
-        _load_unemployment(data_dir / "AM04011Q_20251025-130707.csv"),
+    logger.info("Building macro summary from {}", data_dir)
+    datasets = [
+        ("GDP", _load_gdp(data_dir / "000004KA_20251025-125856.csv")),
+        ("Borrowing rates", _load_rates(data_dir / "000004ZT_20251025-133456.csv")),
+        ("Inflation (KPIF)", _load_inflation(data_dir / "000005HR_20251025-132523.csv")),
+        ("Unemployment", _load_unemployment(data_dir / "AM04011Q_20251025-130707.csv")),
     ]
+
+    for name, frame in datasets:
+        logger.info("Loaded {} table with {} annual rows", name, len(frame))
+
+    frames = [frame for _, frame in datasets]
 
     macro = frames[0]
     for frame in frames[1:]:
@@ -41,7 +46,7 @@ def build_macro_summary(
     macro = macro.sort_values("ser_year").reset_index(drop=True)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     macro.to_parquet(output_path, index=False)
-    logger.success("Macro summary saved to %s (rows=%d)", output_path, len(macro))
+    logger.success("Macro summary saved to {} (rows={:,})", output_path, len(macro))
     return output_path
 
 
@@ -139,8 +144,8 @@ def _load_unemployment(path: Path) -> pd.DataFrame:
     return df
 
 
-@app.command("macro")
-def cli_build_macro_summary(
+@app.command()
+def main(
     data_dir: Path = typer.Option(EXTERNAL_DATA_DIR, help="Directory with macro CSV files."),
     output_path: Path = typer.Option(MACRO_CACHE_PATH, help="Destination parquet file."),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing cache."),

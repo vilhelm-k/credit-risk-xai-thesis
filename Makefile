@@ -69,17 +69,17 @@ create_environment:
 ## Build interim Serrano dataset (raw -> interim cache)
 .PHONY: data-raw
 data-raw:
-	$(PYTHON_INTERPRETER) -m credit_risk_xai.data.make_dataset serrano $(FORCE_FLAG)
+	$(PYTHON_INTERPRETER) -m credit_risk_xai.data.make_dataset $(FORCE_FLAG)
 
 ## Build macroeconomic summary (external -> interim cache)
 .PHONY: data-macro
 data-macro:
-	$(PYTHON_INTERPRETER) -m credit_risk_xai.data.make_macro macro $(FORCE_FLAG)
+	$(PYTHON_INTERPRETER) -m credit_risk_xai.data.make_macro $(FORCE_FLAG)
 
 ## Engineer feature matrix (interim -> processed)
 .PHONY: features
 features:
-	$(PYTHON_INTERPRETER) -m credit_risk_xai.features.engineer engineer $(FORCE_FLAG)
+	$(PYTHON_INTERPRETER) -m credit_risk_xai.features.engineer $(FORCE_FLAG)
 
 ## Orchestrate pipeline (select stages via RAW=true MACRO=true FEATURES=false, etc.)
 .PHONY: build

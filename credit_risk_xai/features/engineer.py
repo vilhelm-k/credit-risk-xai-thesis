@@ -411,8 +411,8 @@ def build_feature_matrix(
     return output_path
 
 
-@app.command("engineer")
-def cli_build_feature_matrix(
+@app.command()
+def main(
     base_path: Path = typer.Option(BASE_CACHE_PATH, help="Input parquet from make_dataset."),
     macro_path: Path = typer.Option(MACRO_CACHE_PATH, help="Macro parquet (optional)."),
     output_path: Path = typer.Option(FEATURE_CACHE_PATH, help="Destination feature parquet."),
