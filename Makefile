@@ -3,7 +3,7 @@
 #################################################################################
 
 PROJECT_NAME = credit-risk-xai-thesis
-PYTHON_VERSION = 3.14
+PYTHON_VERSION = 3.13
 PYTHON_INTERPRETER = python
 FORCE ?= false
 RAW ?= false
