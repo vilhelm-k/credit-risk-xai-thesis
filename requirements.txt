@@ -1,0 +1,18 @@
+loguru
+mkdocs
+pip
+python-dotenv
+ruff
+tqdm
+typer
+pandas
+numpy
+pyarrow
+scikit-learn
+lightgbm
+xgboost
+optuna
+mlflow
+shap
+matplotlib
+-e .
