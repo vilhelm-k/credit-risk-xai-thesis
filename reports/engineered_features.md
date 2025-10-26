@@ -21,7 +21,7 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 
 | Feature | Definition / Formula | Purpose |
 | --- | --- | --- |
-| `ratio_cash_liquidity` | `(br07b_kabasu + br07a_kplacsu) / br13_ksksu` | Quick ratio (cash & near cash vs. current liabilities). |
+| `ratio_cash_liquidity` | `(br07b_kabasu + br07a_kplacsu) / br13_ksksu` | Quick ratio (cash & near cash vs. current liabilities). Computed for consistency with other working capital features. |
 | `dso_days` | `(br06g_kfordsu / rr01_ntoms) * 365` | Days sales outstanding; receivable collection speed. |
 | `inventory_days` | `(br06c_lagersu / rr06a_prodkos) * 365` | Days inventory on hand. |
 | `dpo_days` | `(br13a_ksklev / rr06a_prodkos) * 365` | Days payables outstanding; supplier payment terms. |

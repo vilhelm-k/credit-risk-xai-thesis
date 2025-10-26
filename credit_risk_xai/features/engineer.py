@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -155,99 +156,113 @@ def create_engineered_features(
     drop_raw_sources: bool = True,
 ) -> pd.DataFrame:
     """Return a dataframe enriched with engineered features."""
-    # Avoid unnecessary copy - work with sorted view
-    working_df = df.sort_values(["ORGNR", "ser_year"])
-    working_df["ser_stklf"] = working_df["ser_stklf"].replace(9, pd.NA)
+    # Work directly on df - already sorted by ORGNR, ser_year in make_dataset.py
+    df["ser_stklf"] = df["ser_stklf"].replace(9, pd.NA)
 
     # Set index without dropping columns (we'll drop at the end if needed)
-    working_df = working_df.set_index(["ORGNR", "ser_year"], drop=True)
+    df.set_index(["ORGNR", "ser_year"], drop=True, inplace=True)
     required_columns = set(
         KEPT_RAW_COLS + RR_SOURCE_COLS + BR_SOURCE_COLS + NY_COLS + ["credit_event"]
     )
     for col in required_columns:
-        if col not in working_df.columns:
-            working_df[col] = np.nan
+        if col not in df.columns:
+            df[col] = np.nan
 
     # Create groupby object once and reuse it throughout
-    group = working_df.groupby(level=0, group_keys=False)
+    group = df.groupby(level=0, group_keys=False)
 
     # Collect ALL new features in a single dictionary to minimize joins
     new_features = {}
 
     logger.info("Computing cost structure and profitability ratios")
     # Compute intermediate values once
-    ebitda = working_df["rr07_rorresul"] + working_df["rr05_avskriv"]
-    financial_cost_net = working_df["rr09_finkostn"] - working_df["rr09d_jfrstfin"]
+    ebitda = df["rr07_rorresul"] + df["rr05_avskriv"]
+    financial_cost_net = df["rr09_finkostn"] - df["rr09d_jfrstfin"]
 
     new_features.update({
         "ratio_personnel_cost": _safe_div(
-            working_df["rr04_perskos"], working_df["rr01_ntoms"]
+            df["rr04_perskos"], df["rr01_ntoms"]
         ),
         "ratio_depreciation_cost": _safe_div(
-            working_df["rr05_avskriv"], working_df["rr01_ntoms"]
+            df["rr05_avskriv"], df["rr01_ntoms"]
         ),
         "ratio_other_operating_cost": _safe_div(
-            working_df["rr06_rorkoov"], working_df["rr01_ntoms"]
+            df["rr06_rorkoov"], df["rr01_ntoms"]
         ),
         "ratio_financial_cost": _safe_div(
-            working_df["rr09_finkostn"], working_df["rr01_ntoms"]
+            df["rr09_finkostn"], df["rr01_ntoms"]
         ),
-        "ratio_ebitda_margin": _safe_div(ebitda, working_df["rr01_ntoms"]),
+        "ratio_ebitda_margin": _safe_div(ebitda, df["rr01_ntoms"]),
         "ratio_ebit_interest_cov": _safe_div(
-            working_df["rr07_rorresul"], financial_cost_net
+            df["rr07_rorresul"], financial_cost_net
         ),
         "ratio_ebitda_interest_cov": _safe_div(ebitda, financial_cost_net),
         "ratio_cash_interest_cov": _safe_div(
-            working_df["br07b_kabasu"], financial_cost_net
+            df["br07b_kabasu"], financial_cost_net
         ),
     })
 
     logger.info("Computing liquidity and working-capital efficiencies")
-    total_debt = working_df["br13_ksksu"] + working_df["br15_lsksu"]
+    total_debt = df["br13_ksksu"] + df["br15_lsksu"]
 
     new_features.update({
         "ratio_cash_liquidity": _safe_div(
-            working_df["br07b_kabasu"] + working_df["br07a_kplacsu"],
-            working_df["br13_ksksu"],
+            df["br07b_kabasu"] + df["br07a_kplacsu"],
+            df["br13_ksksu"],
         ),
-        "dso_days": _safe_div(working_df["br06g_kfordsu"], working_df["rr01_ntoms"]) * 365,
-        "inventory_days": _safe_div(working_df["br06c_lagersu"], working_df["rr06a_prodkos"])
+        "dso_days": _safe_div(df["br06g_kfordsu"], df["rr01_ntoms"]) * 365,
+        "inventory_days": _safe_div(df["br06c_lagersu"], df["rr06a_prodkos"])
         * 365,
-        "dpo_days": _safe_div(working_df["br13a_ksklev"], working_df["rr06a_prodkos"]) * 365,
+        "dpo_days": _safe_div(df["br13a_ksklev"], df["rr06a_prodkos"]) * 365,
         "ratio_nwc_sales": _safe_div(
-            working_df["br06_lagerkford"]
-            + working_df["br07_kplackaba"]
-            - working_df["br13_ksksu"],
-            working_df["rr01_ntoms"],
+            df["br06_lagerkford"]
+            + df["br07_kplackaba"]
+            - df["br13_ksksu"],
+            df["rr01_ntoms"],
         ),
     })
 
     logger.info("Computing capital structure and payout ratios")
     new_features.update({
-        "ratio_short_term_debt_share": _safe_div(working_df["br13_ksksu"], total_debt),
+        "ratio_short_term_debt_share": _safe_div(df["br13_ksksu"], total_debt),
         "ratio_secured_debt_assets": _safe_div(
-            working_df["br14_kskkrin"] + working_df["br16_lskkrin"], working_df["br09_tillgsu"]
+            df["br14_kskkrin"] + df["br16_lskkrin"], df["br09_tillgsu"]
         ),
         "ratio_retained_earnings_equity": _safe_div(
-            working_df["br10e_balres"], working_df["br10_eksu"]
+            df["br10e_balres"], df["br10_eksu"]
         ),
         "ratio_share_capital_equity": _safe_div(
-            working_df["br10a_aktiekap"], working_df["br10_eksu"]
+            df["br10a_aktiekap"], df["br10_eksu"]
         ),
         "ratio_dividend_payout": _safe_div(
-            working_df["rr00_utdbel"], working_df["rr15_resar"]
+            df["rr00_utdbel"], df["rr15_resar"]
         ),
         "ratio_group_support": _safe_div(
-            working_df["br10f_kncbdrel"] + working_df["br10g_agtskel"], working_df["rr01_ntoms"]
+            df["br10f_kncbdrel"] + df["br10g_agtskel"], df["rr01_ntoms"]
         ),
     })
 
     # Join basic ratios early so they can be used in trend calculations
-    working_df = working_df.join(pd.DataFrame(new_features, index=working_df.index))
+    df = df.join(pd.DataFrame(new_features, index=df.index))
     new_features.clear()  # Clear to prepare for next batch
 
+    # Drop ALL rr_* and br_* columns except KEPT_RAW_COLS to save memory
+    # KEPT_RAW_COLS = rr01_ntoms, br09_tillgsu, br10_eksu, bslov_antanst,
+    #                 br07b_kabasu, br13_ksksu, br15_lsksu, rr07_rorresul, rr15_resar
+    cols_to_drop = []
+    for col in df.columns:
+        if (col.startswith('rr') or col.startswith('br')) and col not in KEPT_RAW_COLS:
+            cols_to_drop.append(col)
+
+    if cols_to_drop:
+        df.drop(columns=cols_to_drop, inplace=True)
+        gc.collect()  # Force garbage collection to free memory immediately
+        logger.debug("Dropped {} raw rr/br columns after computing basic ratios (kept only KEPT_RAW_COLS)", len(cols_to_drop))
+
+    # Recreate groupby after joining new features
+    group = df.groupby(level=0, group_keys=False)
+
     logger.info("Computing year-over-year deltas and immediate trends")
-    # Reuse the same groupby object - no need to recreate
     for col in ["rr01_ntoms", "rr07_rorresul", "br09_tillgsu"]:
         new_features[f"{col}_yoy_pct"] = group[col].pct_change(fill_method=None)
         new_features[f"{col}_yoy_abs"] = group[col].diff()
@@ -276,72 +291,62 @@ def create_engineered_features(
         ("br10_eksu", "equity_cagr_5y", 5),
         ("rr15_resar", "profit_cagr_5y", 5),
     ]:
-        new_features[target] = _compute_cagr(working_df[source], window)
+        new_features[target] = _compute_cagr(df[source], window)
 
     # Join trends and CAGR before computing rolling features that depend on them
-    working_df = working_df.join(pd.DataFrame(new_features, index=working_df.index))
+    df = df.join(pd.DataFrame(new_features, index=df.index))
     new_features.clear()
 
     logger.info("Computing rolling slopes, volatility, averages, and drawdowns")
     # Continue collecting features to minimize joins
     new_features.update({
-        "ny_rormarg_trend_3y": _rolling_slope(working_df["ny_rormarg"], window=3),
-        "ny_skuldgrd_trend_3y": _rolling_slope(working_df["ny_skuldgrd"], window=3),
-        "ratio_cash_liquidity_trend_3y": _rolling_slope(
-            working_df["ratio_cash_liquidity"], window=3
-        ),
+        "ny_rormarg_trend_3y": _rolling_slope(df["ny_rormarg"], window=3),
+        "ny_skuldgrd_trend_3y": _rolling_slope(df["ny_skuldgrd"], window=3),
+        "ratio_cash_liquidity_trend_3y": _rolling_slope(df["ratio_cash_liquidity"], window=3),
         "dso_days_yoy_diff": group["dso_days"].diff(),
         "inventory_days_yoy_diff": group["inventory_days"].diff(),
         "dpo_days_yoy_diff": group["dpo_days"].diff(),
-        "dso_days_trend_3y": _rolling_slope(working_df["dso_days"], window=3),
-        "inventory_days_trend_3y": _rolling_slope(working_df["inventory_days"], window=3),
-        "dpo_days_trend_3y": _rolling_slope(working_df["dpo_days"], window=3),
-        "ny_rormarg_trend_5y": _rolling_slope(working_df["ny_rormarg"], window=5),
-        "ny_skuldgrd_trend_5y": _rolling_slope(working_df["ny_skuldgrd"], window=5),
-        "ratio_cash_liquidity_trend_5y": _rolling_slope(
-            working_df["ratio_cash_liquidity"], window=5
-        ),
-        "ny_rormarg_vol_3y": _rolling_std(working_df["ny_rormarg"], window=3),
-        "ny_skuldgrd_vol_3y": _rolling_std(working_df["ny_skuldgrd"], window=3),
-        "ratio_cash_liquidity_vol_3y": _rolling_std(
-            working_df["ratio_cash_liquidity"], window=3
-        ),
-        "ny_rormarg_vol_5y": _rolling_std(working_df["ny_rormarg"], window=5),
-        "ny_skuldgrd_vol_5y": _rolling_std(working_df["ny_skuldgrd"], window=5),
-        "ny_rormarg_avg_2y": _rolling_avg(working_df["ny_rormarg"], window=2),
-        "ratio_cash_liquidity_avg_2y": _rolling_avg(
-            working_df["ratio_cash_liquidity"], window=2
-        ),
-        "ny_rormarg_avg_5y": _rolling_avg(working_df["ny_rormarg"], window=5),
-        "ratio_cash_liquidity_avg_5y": _rolling_avg(
-            working_df["ratio_cash_liquidity"], window=5
-        ),
-        "revenue_drawdown_5y": _rolling_drawdown(working_df["rr01_ntoms"], window=5),
-        "equity_drawdown_5y": _rolling_drawdown(working_df["br10_eksu"], window=5),
+        "dso_days_trend_3y": _rolling_slope(df["dso_days"], window=3),
+        "inventory_days_trend_3y": _rolling_slope(df["inventory_days"], window=3),
+        "dpo_days_trend_3y": _rolling_slope(df["dpo_days"], window=3),
+        "ny_rormarg_trend_5y": _rolling_slope(df["ny_rormarg"], window=5),
+        "ny_skuldgrd_trend_5y": _rolling_slope(df["ny_skuldgrd"], window=5),
+        "ratio_cash_liquidity_trend_5y": _rolling_slope(df["ratio_cash_liquidity"], window=5),
+        "ny_rormarg_vol_3y": _rolling_std(df["ny_rormarg"], window=3),
+        "ny_skuldgrd_vol_3y": _rolling_std(df["ny_skuldgrd"], window=3),
+        "ratio_cash_liquidity_vol_3y": _rolling_std(df["ratio_cash_liquidity"], window=3),
+        "ny_rormarg_vol_5y": _rolling_std(df["ny_rormarg"], window=5),
+        "ny_skuldgrd_vol_5y": _rolling_std(df["ny_skuldgrd"], window=5),
+        "ny_rormarg_avg_2y": _rolling_avg(df["ny_rormarg"], window=2),
+        "ratio_cash_liquidity_avg_2y": _rolling_avg(df["ratio_cash_liquidity"], window=2),
+        "ny_rormarg_avg_5y": _rolling_avg(df["ny_rormarg"], window=5),
+        "ratio_cash_liquidity_avg_5y": _rolling_avg(df["ratio_cash_liquidity"], window=5),
+        "revenue_drawdown_5y": _rolling_drawdown(df["rr01_ntoms"], window=5),
+        "equity_drawdown_5y": _rolling_drawdown(df["br10_eksu"], window=5),
     })
 
     logger.info("Computing streak indicators")
     new_features.update({
         "ny_rormarg_down_streak": _streak(
-            working_df["ny_rormarg"], lambda diff: diff < 0
+            df["ny_rormarg"], lambda diff: diff < 0
         ),
         "ny_skuldgrd_up_streak": _streak(
-            working_df["ny_skuldgrd"], lambda diff: diff > 0
+            df["ny_skuldgrd"], lambda diff: diff > 0
         ),
         "ratio_cash_liquidity_down_streak": _streak(
-            working_df["ratio_cash_liquidity"], lambda diff: diff < 0
+            df["ratio_cash_liquidity"], lambda diff: diff < 0
         ),
     })
 
     # Join all rolling and streak features at once
-    working_df = working_df.join(pd.DataFrame(new_features, index=working_df.index))
+    df = df.join(pd.DataFrame(new_features, index=df.index))
     new_features.clear()
 
-    credit_events = working_df["credit_event"] == 1
-    event_years = working_df["ser_year"].where(credit_events)
+    credit_events = df["credit_event"] == 1
+    event_years = df["ser_year"].where(credit_events)
     last_event_year = event_years.groupby(level=0).ffill()
-    working_df["years_since_last_credit_event"] = working_df["ser_year"] - last_event_year
-    working_df.loc[last_event_year.isna(), "years_since_last_credit_event"] = np.nan
+    df["years_since_last_credit_event"] = df["ser_year"] - last_event_year
+    df.loc[last_event_year.isna(), "years_since_last_credit_event"] = np.nan
 
     horizons = {
         "last_event_within_1y": 1,
@@ -350,19 +355,19 @@ def create_engineered_features(
         "last_event_within_5y": 5,
     }
     for col, limit in horizons.items():
-        working_df[col] = (
-            working_df["years_since_last_credit_event"].le(limit).fillna(False).astype("Int8")
+        df[col] = (
+            df["years_since_last_credit_event"].le(limit).fillna(False).astype("Int8")
         )
 
-    working_df["event_count_total"] = group["credit_event"].cumsum().astype("Int16")
-    working_df["event_count_last_5y"] = (
+    df["event_count_total"] = group["credit_event"].cumsum().astype("Int16")
+    df["event_count_last_5y"] = (
         group["credit_event"]
         .rolling(window=5, min_periods=1)
         .sum()
         .reset_index(level=0, drop=True)
         .astype("Int16")
     )
-    working_df["ever_failed"] = (working_df["event_count_total"] > 0).astype("Int8")
+    df["ever_failed"] = (df["event_count_total"] > 0).astype("Int8")
 
     logger.info("Credit event history features computed")
 
@@ -374,42 +379,40 @@ def create_engineered_features(
     macro_aligned = macro_df.set_index("ser_year")
 
     # Create temporary DataFrame with ser_year from index to merge on
-    temp_df = working_df.reset_index()[['ser_year']].join(macro_aligned, on='ser_year')
-    temp_df.index = working_df.index
+    temp_df = df.reset_index()[['ser_year']].join(macro_aligned, on='ser_year')
+    temp_df.index = df.index
 
     # Add all macro columns at once
     for col in macro_aligned.columns:
-        working_df[col] = temp_df[col].values
+        df[col] = temp_df[col].values
 
-    working_df["real_revenue_growth"] = (
-        working_df["rr01_ntoms_yoy_pct"] - working_df["inflation_yoy"]
+    df["real_revenue_growth"] = (
+        df["rr01_ntoms_yoy_pct"] - df["inflation_yoy"]
     )
-    working_df["revenue_vs_gdp"] = (
-        working_df["rr01_ntoms_yoy_pct"] - working_df["gdp_growth"]
+    df["revenue_vs_gdp"] = (
+        df["rr01_ntoms_yoy_pct"] - df["gdp_growth"]
     )
-    working_df["profit_vs_gdp"] = (
-        working_df["rr07_rorresul_yoy_pct"] - working_df["gdp_growth"]
+    df["profit_vs_gdp"] = (
+        df["rr07_rorresul_yoy_pct"] - df["gdp_growth"]
     )
 
     corr = (
-        working_df["rr01_ntoms_yoy_pct"]
+        df["rr01_ntoms_yoy_pct"]
         .groupby(level=0, group_keys=False)
         .rolling(window=5, min_periods=4)
-        .corr(working_df["gdp_growth"])
+        .corr(df["gdp_growth"])
     )
-    working_df["correlation_revenue_gdp_5y"] = corr.reset_index(level=0, drop=True)
+    df["correlation_revenue_gdp_5y"] = corr.reset_index(level=0, drop=True)
     logger.info("Macro indicators merged")
 
-    working_df = working_df.reset_index(drop=True)
+    df.reset_index(drop=True, inplace=True)
 
-    if drop_raw_sources:
-        drop_cols = [col for col in RR_SOURCE_COLS + BR_SOURCE_COLS if col in working_df.columns]
-        working_df = working_df.drop(columns=drop_cols)
-        logger.debug("Dropped {} raw source columns", len(drop_cols))
+    # Note: Raw rr_*/br_* columns (except KEPT_RAW_COLS) were already dropped after computing ratios
+    # So drop_raw_sources parameter is now redundant, but we keep it for API compatibility
 
-    logger.success("Feature engineering completed (rows={:,}, columns={})", len(working_df), working_df.shape[1])
+    logger.success("Feature engineering completed (rows={:,}, columns={})", len(df), df.shape[1])
 
-    return working_df
+    return df
 
 
 def apply_modeling_filters(df: pd.DataFrame, min_revenue_ksek: int = MIN_REVENUE_KSEK) -> pd.DataFrame:
