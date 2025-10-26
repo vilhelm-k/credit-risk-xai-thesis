@@ -73,15 +73,15 @@ def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     # Phase 1: Binary indicators (0/1) → Int8
     binary_cols = ["bol_konkurs", "ser_aktiv", "ser_nystartat"]
     for col in binary_cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int8")
+        df[col] = df[col].astype("Int8")
 
     # Phase 2: Small ordinal/categorical integers
-    df["ser_stklf"] = pd.to_numeric(df["ser_stklf"], errors="coerce").astype("Int8")
-    df["bslov_antanst"] = pd.to_numeric(df["bslov_antanst"], errors="coerce").astype("Int32")
-    df["bransch_sni071_konv"] = pd.to_numeric(df["bransch_sni071_konv"], errors="coerce").astype("Int32")
-    df["bransch_borsbransch_konv"] = pd.to_numeric(df["bransch_borsbransch_konv"], errors="coerce").astype("Int8")
-    df["ser_laen"] = pd.to_numeric(df["ser_laen"], errors="coerce").astype("Int8")
-    df["knc_kncfall"] = pd.to_numeric(df["knc_kncfall"], errors="coerce").astype("Int8")
+    df["ser_stklf"] = df["ser_stklf"].astype("Int8")
+    df["bslov_antanst"] = df["bslov_antanst"].astype("Int32")
+    df["bransch_sni071_konv"] = df["bransch_sni071_konv"].astype("Int32")
+    df["bransch_borsbransch_konv"] = df["bransch_borsbransch_konv"].astype("Int8")
+    df["ser_laen"] = df["ser_laen"].astype("Int8")
+    df["knc_kncfall"] = df["knc_kncfall"].astype("Int8")
 
     # Phase 3: Downcast all financial data to float32
     # Financial ratios (ny_* columns)
@@ -150,9 +150,6 @@ def generate_serrano_base(
         df = df[df["ser_jurform"] == 49.0]
         df.drop(columns=["ser_jurform"], inplace=True)
 
-        # Optimize all data types in one place
-        df = _optimize_dtypes(df)
-
         # Compute derived features (using optimized dtypes)
         df["company_age"] = df["ser_year"] - df["ser_regdat"].dt.year
 
@@ -164,6 +161,9 @@ def generate_serrano_base(
         df["sme_category"] = classify_sme_eu_vectorized(
             df["ser_stklf"], df["rr01_ntoms"], df["br09_tillgsu"]
         )
+        # Optimize all data types in one place
+        df = _optimize_dtypes(df)
+        
         # Ensure proper categorical with all possible categories
         df["sme_category"] = df["sme_category"].cat.set_categories(SME_CATEGORIES + ["Unknown"])
 
