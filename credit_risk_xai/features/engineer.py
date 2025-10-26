@@ -72,27 +72,30 @@ def _rolling_slope_kernel(values: np.ndarray) -> float:
 
 def _rolling_slope(series: pd.Series, window: int) -> pd.Series:
     """Rolling slope using a compiled numba kernel for memory-efficient performance."""
-    return (
-        series.groupby(level=0, group_keys=False)
+    result = (
+        series.groupby(level=0)
         .rolling(window=window, min_periods=window)
         .apply(_rolling_slope_kernel, raw=True, engine="numba")
     )
+    return result.reset_index(level=0, drop=True)
 
 
 def _rolling_avg(series: pd.Series, window: int) -> pd.Series:
-    return (
-        series.groupby(level=0, group_keys=False)
+    result = (
+        series.groupby(level=0)
         .rolling(window=window, min_periods=2)
         .mean()
     )
+    return result.reset_index(level=0, drop=True)
 
 
 def _rolling_std(series: pd.Series, window: int) -> pd.Series:
-    return (
-        series.groupby(level=0, group_keys=False)
+    result = (
+        series.groupby(level=0)
         .rolling(window=window, min_periods=window)
         .std()
     )
+    return result.reset_index(level=0, drop=True)
 
 
 @njit(cache=True)
@@ -133,11 +136,12 @@ def _rolling_drawdown_kernel(values: np.ndarray) -> float:
 
 def _rolling_drawdown(series: pd.Series, window: int) -> pd.Series:
     """Optimized rolling drawdown using a compiled kernel to avoid Python-overhead."""
-    return (
-        series.groupby(level=0, group_keys=False)
+    result = (
+        series.groupby(level=0)
         .rolling(window=window, min_periods=window)
         .apply(_rolling_drawdown_kernel, raw=True, engine="numba")
     )
+    return result.reset_index(level=0, drop=True)
 
 
 def _compute_cagr(series: pd.Series, periods: int) -> pd.Series:
