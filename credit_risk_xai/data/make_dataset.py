@@ -21,21 +21,34 @@ from credit_risk_xai.config import (
 app = typer.Typer(help="Commands for building interim Serrano datasets.")
 
 
-def classify_sme_eu(ser_stklf: float, revenue_ksek: float, total_assets_ksek: float) -> str:
-    """Classify into SME categories using the strict EU definition."""
-    if pd.isna(ser_stklf) or ser_stklf == 9:
-        return "Unknown"
+def classify_sme_eu_vectorized(
+    ser_stklf: pd.Series, revenue_ksek: pd.Series, total_assets_ksek: pd.Series
+) -> pd.Series:
+    """Vectorized SME classification using the strict EU definition."""
+    # Convert to MEUR (11 SEK ~= 1 EUR exchange rate)
+    rev_meur = revenue_ksek.fillna(0) / 11_000
+    assets_meur = total_assets_ksek.fillna(0) / 11_000
 
-    rev_meur = (revenue_ksek or 0) / 11_000
-    assets_meur = (total_assets_ksek or 0) / 11_000
+    # Define conditions in order of priority (most specific first)
+    conditions = [
+        # Unknown: missing or invalid employee count
+        ser_stklf.isna() | (ser_stklf == 9),
+        # Micro: <= 2 employees AND (revenue <= 2M EUR OR assets <= 2M EUR)
+        (ser_stklf <= 2) & ((rev_meur <= 2) | (assets_meur <= 2)),
+        # Small: <= 4 employees AND (revenue <= 10M EUR OR assets <= 10M EUR)
+        (ser_stklf <= 4) & ((rev_meur <= 10) | (assets_meur <= 10)),
+        # Medium: <= 6 employees AND (revenue <= 50M EUR OR assets <= 43M EUR)
+        (ser_stklf <= 6) & ((rev_meur <= 50) | (assets_meur <= 43)),
+    ]
 
-    if ser_stklf <= 2 and (rev_meur <= 2 or assets_meur <= 2):
-        return "Micro"
-    if ser_stklf <= 4 and (rev_meur <= 10 or assets_meur <= 10):
-        return "Small"
-    if ser_stklf <= 6 and (rev_meur <= 50 or assets_meur <= 43):
-        return "Medium"
-    return "Large"
+    choices = ["Unknown", "Micro", "Small", "Medium"]
+
+    # Default to "Large" if none of the conditions match
+    return pd.Series(
+        np.select(conditions, choices, default="Large"),
+        index=ser_stklf.index,
+        dtype="category",
+    )
 
 
 def _ensure_categories(df: pd.DataFrame, columns: Iterable[str]) -> pd.DataFrame:
@@ -78,23 +91,27 @@ def generate_serrano_base(
         logger.debug("    Raw rows loaded: {:,}", len(df))
         total_rows += len(df)
 
-        df = df[df["ser_jurform"] == 49.0].copy()
+        # Filter for limited liability companies only (no need for .copy())
+        df = df[df["ser_jurform"] == 49.0]
         df.drop(columns=["ser_jurform"], inplace=True)
 
-        df["ser_regdat"] = pd.to_datetime(df["ser_regdat"], errors="coerce")
-        df["bol_q80dat"] = pd.to_datetime(df["bol_q80dat"], errors="coerce")
+        # read_stata handles datetime conversion automatically, so these lines are removed
+        # Ensure numeric types for key columns
         df["ser_year"] = pd.to_numeric(df["ser_year"], errors="coerce").astype("Int32")
         df["ORGNR"] = pd.to_numeric(df["ORGNR"], errors="coerce").astype("Int64")
 
+        # Compute derived features
         df["company_age"] = df["ser_year"] - df["ser_regdat"].dt.year
         df["credit_event"] = (
             ((df["bol_konkurs"] == 1) | (df["bol_q80dat"].notna())).astype("int8")
         )
-        df["sme_category"] = df.apply(
-            lambda row: classify_sme_eu(row["ser_stklf"], row["rr01_ntoms"], row["br09_tillgsu"]),
-            axis=1,
+
+        # Vectorized SME classification (much faster than apply)
+        df["sme_category"] = classify_sme_eu_vectorized(
+            df["ser_stklf"], df["rr01_ntoms"], df["br09_tillgsu"]
         )
-        df["sme_category"] = pd.Categorical(df["sme_category"], categories=SME_CATEGORIES + ["Unknown"])
+        # Ensure proper categorical with all possible categories
+        df["sme_category"] = df["sme_category"].cat.set_categories(SME_CATEGORIES + ["Unknown"])
 
         if "bransch_sni071_konv" in df.columns:
             df["bransch_sni071_konv"] = df["bransch_sni071_konv"].astype("Int32")
