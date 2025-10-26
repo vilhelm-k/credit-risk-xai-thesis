@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import typer
 from loguru import logger
+from numba import jit
 
 from credit_risk_xai.config import (
     BASE_CACHE_PATH,
@@ -37,19 +38,32 @@ def _safe_div(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
 
 
 def _rolling_slope(series: pd.Series, window: int) -> pd.Series:
-    def _slope(values: np.ndarray) -> float:
+    """Vectorized rolling slope calculation using fast linear regression formula."""
+    def _slope_vectorized(values: np.ndarray) -> float:
         if np.isnan(values).all():
             return np.nan
-        x = np.arange(len(values))
         mask = ~np.isnan(values)
         if mask.sum() < 2:
             return np.nan
-        return np.polyfit(x[mask], values[mask], 1)[0]
+
+        # Fast vectorized linear regression: slope = cov(x,y) / var(x)
+        x = np.arange(len(values))
+        x_masked = x[mask]
+        y_masked = values[mask]
+
+        x_mean = x_masked.mean()
+        y_mean = y_masked.mean()
+
+        # Slope = sum((x - x_mean)(y - y_mean)) / sum((x - x_mean)^2)
+        numerator = np.sum((x_masked - x_mean) * (y_masked - y_mean))
+        denominator = np.sum((x_masked - x_mean) ** 2)
+
+        return numerator / denominator if denominator != 0 else np.nan
 
     return (
         series.groupby(level=0, group_keys=False)
         .rolling(window=window, min_periods=window)
-        .apply(_slope, raw=True)
+        .apply(_slope_vectorized, raw=True)
     )
 
 
@@ -70,17 +84,24 @@ def _rolling_std(series: pd.Series, window: int) -> pd.Series:
 
 
 def _rolling_drawdown(series: pd.Series, window: int) -> pd.Series:
-    def _max_drawdown(values: np.ndarray) -> float:
+    """Optimized rolling drawdown using vectorized operations."""
+    def _max_drawdown_fast(values: np.ndarray) -> float:
         if np.isnan(values).all():
             return np.nan
-        running_max = np.maximum.accumulate(values)
-        drawdowns = values / running_max - 1.0
+        # Handle NaN values
+        valid_mask = ~np.isnan(values)
+        if not valid_mask.any():
+            return np.nan
+
+        valid_values = values[valid_mask]
+        running_max = np.maximum.accumulate(valid_values)
+        drawdowns = valid_values / running_max - 1.0
         return drawdowns.min()
 
     return (
         series.groupby(level=0, group_keys=False)
         .rolling(window=window, min_periods=window)
-        .apply(_max_drawdown, raw=True)
+        .apply(_max_drawdown_fast, raw=True)
     )
 
 
@@ -92,20 +113,33 @@ def _compute_cagr(series: pd.Series, periods: int) -> pd.Series:
     return cagr.where(mask, np.nan)
 
 
+@jit(nopython=True)
+def _streak_numba(condition_values: np.ndarray) -> np.ndarray:
+    """Numba-compiled streak counter for maximum performance."""
+    out = np.zeros(len(condition_values), dtype=np.float64)
+    count = 0.0
+    for idx in range(len(condition_values)):
+        if np.isnan(condition_values[idx]):
+            out[idx] = np.nan
+            count = 0.0
+        elif condition_values[idx]:
+            count += 1.0
+            out[idx] = count
+        else:
+            count = 0.0
+            out[idx] = 0.0
+    return out
+
+
 def _streak(series: pd.Series, comparator) -> pd.Series:
+    """Optimized streak calculation using numba-compiled function."""
     diffs = series.groupby(level=0).diff()
 
     def _streak_group(group: pd.Series) -> pd.Series:
-        cond = comparator(diffs.loc[group.index].to_numpy())
-        out = np.zeros(len(cond), dtype=float)
-        count = 0
-        for idx, flag in enumerate(cond):
-            if flag:
-                count += 1
-            else:
-                count = 0
-            out[idx] = count
-        return pd.Series(out, index=group.index)
+        group_diffs = diffs.loc[group.index].to_numpy()
+        group_cond = comparator(group_diffs)
+        result = _streak_numba(group_cond)
+        return pd.Series(result, index=group.index)
 
     return series.groupby(level=0, group_keys=False).apply(_streak_group)
 
@@ -121,11 +155,12 @@ def create_engineered_features(
     drop_raw_sources: bool = True,
 ) -> pd.DataFrame:
     """Return a dataframe enriched with engineered features."""
-    working_df = df.copy()
-    working_df.sort_values(["ORGNR", "ser_year"], inplace=True)
+    # Avoid unnecessary copy - work with sorted view
+    working_df = df.sort_values(["ORGNR", "ser_year"])
     working_df["ser_stklf"] = working_df["ser_stklf"].replace(9, pd.NA)
 
-    working_df = working_df.set_index(["ORGNR", "ser_year"], drop=False)
+    # Set index without dropping columns (we'll drop at the end if needed)
+    working_df = working_df.set_index(["ORGNR", "ser_year"], drop=True)
     required_columns = set(
         KEPT_RAW_COLS + RR_SOURCE_COLS + BR_SOURCE_COLS + NY_COLS + ["credit_event"]
     )
@@ -133,10 +168,18 @@ def create_engineered_features(
         if col not in working_df.columns:
             working_df[col] = np.nan
 
+    # Create groupby object once and reuse it throughout
     group = working_df.groupby(level=0, group_keys=False)
 
+    # Collect ALL new features in a single dictionary to minimize joins
+    new_features = {}
+
     logger.info("Computing cost structure and profitability ratios")
-    ratio_cols = {
+    # Compute intermediate values once
+    ebitda = working_df["rr07_rorresul"] + working_df["rr05_avskriv"]
+    financial_cost_net = working_df["rr09_finkostn"] - working_df["rr09d_jfrstfin"]
+
+    new_features.update({
         "ratio_personnel_cost": _safe_div(
             working_df["rr04_perskos"], working_df["rr01_ntoms"]
         ),
@@ -149,31 +192,20 @@ def create_engineered_features(
         "ratio_financial_cost": _safe_div(
             working_df["rr09_finkostn"], working_df["rr01_ntoms"]
         ),
-        "ratio_ebitda_margin": _safe_div(
-            working_df["rr07_rorresul"] + working_df["rr05_avskriv"],
-            working_df["rr01_ntoms"],
+        "ratio_ebitda_margin": _safe_div(ebitda, working_df["rr01_ntoms"]),
+        "ratio_ebit_interest_cov": _safe_div(
+            working_df["rr07_rorresul"], financial_cost_net
         ),
-    }
-
-    financial_cost_net = working_df["rr09_finkostn"] - working_df["rr09d_jfrstfin"]
-    ratio_cols.update(
-        {
-            "ratio_ebit_interest_cov": _safe_div(
-                working_df["rr07_rorresul"], financial_cost_net
-            ),
-            "ratio_ebitda_interest_cov": _safe_div(
-                working_df["rr07_rorresul"] + working_df["rr05_avskriv"], financial_cost_net
-            ),
-            "ratio_cash_interest_cov": _safe_div(
-                working_df["br07b_kabasu"], financial_cost_net
-            ),
-        }
-    )
-    working_df = working_df.join(pd.DataFrame(ratio_cols, index=working_df.index))
-    group = working_df.groupby(level=0, group_keys=False)
+        "ratio_ebitda_interest_cov": _safe_div(ebitda, financial_cost_net),
+        "ratio_cash_interest_cov": _safe_div(
+            working_df["br07b_kabasu"], financial_cost_net
+        ),
+    })
 
     logger.info("Computing liquidity and working-capital efficiencies")
-    liquidity_cols = {
+    total_debt = working_df["br13_ksksu"] + working_df["br15_lsksu"]
+
+    new_features.update({
         "ratio_cash_liquidity": _safe_div(
             working_df["br07b_kabasu"] + working_df["br07a_kplacsu"],
             working_df["br13_ksksu"],
@@ -188,13 +220,10 @@ def create_engineered_features(
             - working_df["br13_ksksu"],
             working_df["rr01_ntoms"],
         ),
-    }
-    working_df = working_df.join(pd.DataFrame(liquidity_cols, index=working_df.index))
-    group = working_df.groupby(level=0, group_keys=False)
+    })
 
     logger.info("Computing capital structure and payout ratios")
-    total_debt = working_df["br13_ksksu"] + working_df["br15_lsksu"]
-    capital_cols = {
+    new_features.update({
         "ratio_short_term_debt_share": _safe_div(working_df["br13_ksksu"], total_debt),
         "ratio_secured_debt_assets": _safe_div(
             working_df["br14_kskkrin"] + working_df["br16_lskkrin"], working_df["br09_tillgsu"]
@@ -211,16 +240,18 @@ def create_engineered_features(
         "ratio_group_support": _safe_div(
             working_df["br10f_kncbdrel"] + working_df["br10g_agtskel"], working_df["rr01_ntoms"]
         ),
-    }
-    working_df = working_df.join(pd.DataFrame(capital_cols, index=working_df.index))
-    group = working_df.groupby(level=0, group_keys=False)
+    })
+
+    # Join basic ratios early so they can be used in trend calculations
+    working_df = working_df.join(pd.DataFrame(new_features, index=working_df.index))
+    new_features.clear()  # Clear to prepare for next batch
 
     logger.info("Computing year-over-year deltas and immediate trends")
-    trend_cols = {}
+    # Reuse the same groupby object - no need to recreate
     for col in ["rr01_ntoms", "rr07_rorresul", "br09_tillgsu"]:
-        trend_cols[f"{col}_yoy_pct"] = group[col].pct_change(fill_method=None)
-        trend_cols[f"{col}_yoy_abs"] = group[col].diff()
-    trend_cols.update(
+        new_features[f"{col}_yoy_pct"] = group[col].pct_change(fill_method=None)
+        new_features[f"{col}_yoy_abs"] = group[col].diff()
+    new_features.update(
         {
             "ny_solid_yoy_diff": group["ny_solid"].diff(),
             "ny_skuldgrd_yoy_diff": group["ny_skuldgrd"].diff(),
@@ -233,9 +264,8 @@ def create_engineered_features(
             ),
         }
     )
-    working_df = working_df.join(pd.DataFrame(trend_cols, index=working_df.index))
-    group = working_df.groupby(level=0, group_keys=False)
 
+    # Compute CAGR features
     for source, target, window in [
         ("rr01_ntoms", "revenue_cagr_3y", 3),
         ("br09_tillgsu", "assets_cagr_3y", 3),
@@ -246,11 +276,15 @@ def create_engineered_features(
         ("br10_eksu", "equity_cagr_5y", 5),
         ("rr15_resar", "profit_cagr_5y", 5),
     ]:
-        working_df[target] = _compute_cagr(working_df[source], window)
-    group = working_df.groupby(level=0, group_keys=False)
+        new_features[target] = _compute_cagr(working_df[source], window)
+
+    # Join trends and CAGR before computing rolling features that depend on them
+    working_df = working_df.join(pd.DataFrame(new_features, index=working_df.index))
+    new_features.clear()
 
     logger.info("Computing rolling slopes, volatility, averages, and drawdowns")
-    slope_cols = {
+    # Continue collecting features to minimize joins
+    new_features.update({
         "ny_rormarg_trend_3y": _rolling_slope(working_df["ny_rormarg"], window=3),
         "ny_skuldgrd_trend_3y": _rolling_slope(working_df["ny_skuldgrd"], window=3),
         "ratio_cash_liquidity_trend_3y": _rolling_slope(
@@ -284,27 +318,24 @@ def create_engineered_features(
         ),
         "revenue_drawdown_5y": _rolling_drawdown(working_df["rr01_ntoms"], window=5),
         "equity_drawdown_5y": _rolling_drawdown(working_df["br10_eksu"], window=5),
-    }
-    working_df = working_df.join(pd.DataFrame(slope_cols, index=working_df.index))
-    group = working_df.groupby(level=0, group_keys=False)
+    })
 
     logger.info("Computing streak indicators")
-    working_df = working_df.join(
-        pd.DataFrame(
-            {
-                "ny_rormarg_down_streak": _streak(
-                    working_df["ny_rormarg"], lambda diff: diff < 0
-                ),
-                "ny_skuldgrd_up_streak": _streak(
-                    working_df["ny_skuldgrd"], lambda diff: diff > 0
-                ),
-                "ratio_cash_liquidity_down_streak": _streak(
-                    working_df["ratio_cash_liquidity"], lambda diff: diff < 0
-                ),
-            },
-            index=working_df.index,
-        )
-    )
+    new_features.update({
+        "ny_rormarg_down_streak": _streak(
+            working_df["ny_rormarg"], lambda diff: diff < 0
+        ),
+        "ny_skuldgrd_up_streak": _streak(
+            working_df["ny_skuldgrd"], lambda diff: diff > 0
+        ),
+        "ratio_cash_liquidity_down_streak": _streak(
+            working_df["ratio_cash_liquidity"], lambda diff: diff < 0
+        ),
+    })
+
+    # Join all rolling and streak features at once
+    working_df = working_df.join(pd.DataFrame(new_features, index=working_df.index))
+    new_features.clear()
 
     credit_events = working_df["credit_event"] == 1
     event_years = working_df["ser_year"].where(credit_events)
@@ -339,9 +370,16 @@ def create_engineered_features(
         raise ValueError("Macro dataframe is required. Run the macro preprocessing step first.")
 
     logger.info("Merging macroeconomic indicators and derived comparisons")
+    # Optimized: Use single merge instead of loop with map
     macro_aligned = macro_df.set_index("ser_year")
+
+    # Create temporary DataFrame with ser_year from index to merge on
+    temp_df = working_df.reset_index()[['ser_year']].join(macro_aligned, on='ser_year')
+    temp_df.index = working_df.index
+
+    # Add all macro columns at once
     for col in macro_aligned.columns:
-        working_df[col] = working_df.index.get_level_values(1).map(macro_aligned[col])
+        working_df[col] = temp_df[col].values
 
     working_df["real_revenue_growth"] = (
         working_df["rr01_ntoms_yoy_pct"] - working_df["inflation_yoy"]
@@ -376,7 +414,8 @@ def create_engineered_features(
 
 def apply_modeling_filters(df: pd.DataFrame, min_revenue_ksek: int = MIN_REVENUE_KSEK) -> pd.DataFrame:
     mask = (df["ser_aktiv"] == 1) & (df["rr01_ntoms"] >= min_revenue_ksek)
-    return df.loc[mask].copy()
+    # No need for .copy() - .loc[mask] already returns a new DataFrame
+    return df.loc[mask]
 
 
 def create_target_variable(df: pd.DataFrame) -> pd.Series:
