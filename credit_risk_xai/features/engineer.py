@@ -408,13 +408,12 @@ def create_engineered_features(
     # Optimized: Use single merge instead of loop with map
     macro_aligned = macro_df.set_index("ser_year")
 
-    # Create temporary DataFrame with ser_year from index to merge on
-    temp_df = df.reset_index()[['ser_year']].join(macro_aligned, on='ser_year')
-    temp_df.index = df.index
+    ser_year_values = df["ser_year"].to_numpy()
+    macro_matched = macro_aligned.reindex(ser_year_values)
+    macro_matched.index = df.index
 
-    # Add all macro columns at once
     for col in macro_aligned.columns:
-        df[col] = temp_df[col].values
+        df[col] = macro_matched[col].values
 
     df["real_revenue_growth"] = (
         df["rr01_ntoms_yoy_pct"] - df["inflation_yoy"]
