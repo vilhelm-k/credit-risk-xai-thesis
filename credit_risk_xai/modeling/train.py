@@ -12,7 +12,7 @@ import typer
 from loguru import logger
 from sklearn.metrics import average_precision_score, roc_auc_score
 
-from credit_risk_xai.config import FEATURE_CACHE_PATH, MIN_REVENUE_KSEK
+from credit_risk_xai.config import FEATURE_CACHE_PATH
 from credit_risk_xai.features.engineer import prepare_modeling_data
 from credit_risk_xai.modeling.utils import positive_class_weight, split_train_validation
 

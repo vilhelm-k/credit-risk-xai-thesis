@@ -203,12 +203,6 @@ def create_engineered_features(
 
     # Set index without dropping columns (we'll drop at the end if needed)
     df.set_index(["ORGNR", "ser_year"], drop=False, inplace=True)
-    required_columns = set(
-        KEPT_RAW_COLS + RR_SOURCE_COLS + BR_SOURCE_COLS + NY_COLS + ["credit_event"]
-    )
-    for col in required_columns:
-        if col not in df.columns:
-            df[col] = np.nan
 
     # Create groupby object once and reuse it throughout
     group = df.groupby(level=0, group_keys=False)
@@ -291,15 +285,10 @@ def create_engineered_features(
     # Drop ALL rr_* and br_* columns except KEPT_RAW_COLS to save memory
     # KEPT_RAW_COLS = rr01_ntoms, br09_tillgsu, br10_eksu, bslov_antanst,
     #                 br07b_kabasu, br13_ksksu, br15_lsksu, rr07_rorresul, rr15_resar
-    cols_to_drop = []
-    for col in df.columns:
-        if (col.startswith('rr') or col.startswith('br')) and col not in KEPT_RAW_COLS:
-            cols_to_drop.append(col)
-
-    if cols_to_drop:
-        df.drop(columns=cols_to_drop, inplace=True)
-        gc.collect()  # Force garbage collection to free memory immediately
-        logger.debug("Dropped {} raw rr/br columns after computing basic ratios (kept only KEPT_RAW_COLS)", len(cols_to_drop))
+    cols_to_drop = [col for col in (RR_SOURCE_COLS + BR_SOURCE_COLS) if col in df.columns and col not in KEPT_RAW_COLS]
+    df.drop(columns=cols_to_drop, inplace=True)
+    gc.collect()  # Force garbage collection to free memory immediately
+    logger.debug("Dropped {} raw rr/br columns after computing basic ratios (kept only KEPT_RAW_COLS)", len(cols_to_drop))
 
     # Recreate groupby after joining new features
     group = df.groupby(level=0, group_keys=False)

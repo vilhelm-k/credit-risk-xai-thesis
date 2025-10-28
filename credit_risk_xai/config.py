@@ -271,27 +271,8 @@ MACRO_FEATURE_NAMES = [
     "real_revenue_growth",
     "revenue_vs_gdp",
     "profit_vs_gdp",
-    "correlation_revenue_gdp_5y",
+    "revenue_beta_gdp_5y",
 ]
-
-MACRO_FEATURE_PRIORITIES = {
-    "gdp_growth": "high",
-    "gdp_growth_3y_avg": "high",
-    "interest_avg_short": "high",
-    "interest_avg_medium": "medium",
-    "interest_avg_long": "high",
-    "interest_delta_short": "high",
-    "term_spread": "high",
-    "term_spread_delta": "medium",
-    "inflation_yoy": "high",
-    "inflation_trailing_3y": "medium",
-    "unemp_rate": "medium",
-    "unemp_delta": "medium",
-    "real_revenue_growth": "high",
-    "revenue_vs_gdp": "high",
-    "profit_vs_gdp": "medium",
-    "correlation_revenue_gdp_5y": "medium",
-}
 
 ENGINEERED_FEATURE_NAMES = (
     RATIO_FEATURE_NAMES
@@ -333,10 +314,3 @@ BASE_MODEL_FEATURES = [
 FEATURES_FOR_MODEL = list(
     dict.fromkeys(BASE_MODEL_FEATURES + NY_COLS + KEPT_RAW_COLS + ENGINEERED_FEATURE_NAMES)
 )
-
-# -----------------------------------------------------------------------------
-# Constants
-# -----------------------------------------------------------------------------
-
-MIN_REVENUE_KSEK = 1_000
-CORRELATION_WINDOW = 5
