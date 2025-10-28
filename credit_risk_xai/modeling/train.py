@@ -13,11 +13,7 @@ from loguru import logger
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 from credit_risk_xai.config import FEATURE_CACHE_PATH, MIN_REVENUE_KSEK
-from credit_risk_xai.features.engineer import (
-    apply_modeling_filters,
-    create_target_variable,
-    prepare_modeling_data,
-)
+from credit_risk_xai.features.engineer import prepare_modeling_data
 from credit_risk_xai.modeling.utils import positive_class_weight, split_train_validation
 
 app = typer.Typer(help="Model training utilities (LightGBM + Optuna + MLflow).")
@@ -164,9 +160,9 @@ def cli_train_lightgbm(
         raise FileNotFoundError(f"Feature matrix not found: {feature_path}. Run feature pipeline first.")
 
     df = pd.read_parquet(feature_path)
-    filtered = apply_modeling_filters(df, min_revenue_ksek=min_revenue)
-    valid_mask = create_target_variable(filtered)
-    X, y = prepare_modeling_data(filtered, valid_mask)
+    # Apply filtering: active companies with minimum revenue
+    filtered = df[(df["ser_aktiv"] == 1) & (df["rr01_ntoms"] >= min_revenue)]
+    X, y = prepare_modeling_data(filtered)
     X_train, X_val, y_train, y_val = split_train_validation(
         X, y, test_size=test_size, random_state=random_state
     )
@@ -206,9 +202,9 @@ def cli_run_optuna(
         raise FileNotFoundError(f"Feature matrix not found: {feature_path}.")
 
     df = pd.read_parquet(feature_path)
-    filtered = apply_modeling_filters(df, min_revenue_ksek=min_revenue)
-    valid_mask = create_target_variable(filtered)
-    X, y = prepare_modeling_data(filtered, valid_mask)
+    # Apply filtering: active companies with minimum revenue
+    filtered = df[(df["ser_aktiv"] == 1) & (df["rr01_ntoms"] >= min_revenue)]
+    X, y = prepare_modeling_data(filtered)
 
     run_optuna_study(
         X,

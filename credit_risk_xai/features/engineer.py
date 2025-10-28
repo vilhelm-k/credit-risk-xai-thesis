@@ -17,7 +17,6 @@ from credit_risk_xai.config import (
     FEATURES_FOR_MODEL,
     KEPT_RAW_COLS,
     MACRO_CACHE_PATH,
-    MIN_REVENUE_KSEK,
     NY_COLS,
     RR_SOURCE_COLS,
 )
@@ -440,6 +439,11 @@ def create_engineered_features(
 
     logger.info("Macro indicators merged (including revenue beta)")
 
+    # Computing target variable
+    logger.info("Creating target variable for next-year credit events")
+    df["target_next_year"] = (
+        df.groupby(level=0, group_keys=False)["credit_event"].shift(-1).astype("Int8")
+    )
     df.reset_index(drop=True, inplace=True)
 
     # Note: Raw rr_*/br_* columns (except KEPT_RAW_COLS) were already dropped after computing ratios
@@ -450,21 +454,22 @@ def create_engineered_features(
     return df
 
 
-def apply_modeling_filters(df: pd.DataFrame, min_revenue_ksek: int = MIN_REVENUE_KSEK) -> pd.DataFrame:
-    mask = (df["ser_aktiv"] == 1) & (df["rr01_ntoms"] >= min_revenue_ksek)
-    # No need for .copy() - .loc[mask] already returns a new DataFrame
-    return df.loc[mask]
+def prepare_modeling_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+    """
+    Extract modeling features and target from a pre-filtered DataFrame.
 
+    Filters for valid targets (non-null target_next_year) and returns views
+    of the feature matrix X and target vector y.
 
-def create_target_variable(df: pd.DataFrame) -> pd.Series:
-    df.sort_values(["ORGNR", "ser_year"], inplace=True)
-    df["target_next_year"] = (
-        df.groupby("ORGNR", group_keys=False)["credit_event"].shift(-1).astype("Int8")
-    )
-    return df["target_next_year"].notna()
+    Args:
+        df: DataFrame with engineered features and target_next_year column.
+            Should be pre-filtered by user (e.g., revenue threshold, SME category).
 
-
-def prepare_modeling_data(df: pd.DataFrame, valid_mask: pd.Series) -> Tuple[pd.DataFrame, pd.Series]:
+    Returns:
+        X: Feature matrix view (FEATURES_FOR_MODEL columns)
+        y: Target vector view (target_next_year)
+    """
+    valid_mask = df["target_next_year"].notna()
     X = df.loc[valid_mask, FEATURES_FOR_MODEL]
     y = df.loc[valid_mask, "target_next_year"]
     return X, y

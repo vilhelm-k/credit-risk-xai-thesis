@@ -1,9 +1,5 @@
 """Feature engineering utilities."""
 
-from .engineer import (  # noqa: F401
-    create_engineered_features,
-    apply_modeling_filters,
-    create_target_variable,
-    prepare_modeling_data,
-    build_feature_matrix,
-)
+from .engineer import prepare_modeling_data  # noqa: F401
+
+# Note: create_engineered_features and build_feature_matrix are for CLI use only
