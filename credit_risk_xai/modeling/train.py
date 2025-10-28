@@ -150,7 +150,7 @@ def _nullcontext():
 @app.command("lightgbm")
 def cli_train_lightgbm(
     feature_path: Path = typer.Option(FEATURE_CACHE_PATH, help="Path to features parquet."),
-    min_revenue: int = typer.Option(MIN_REVENUE_KSEK, help="Revenue threshold (kSEK)."),
+    min_revenue: int = typer.Option(1000, help="Revenue threshold (kSEK)."),
     test_size: float = typer.Option(0.2, help="Validation split fraction."),
     random_state: int = typer.Option(42, help="Random seed."),
     output_model: Optional[Path] = typer.Option(None, help="Optional path to save trained model."),
@@ -191,7 +191,7 @@ def cli_train_lightgbm(
 @app.command("optuna")
 def cli_run_optuna(
     feature_path: Path = typer.Option(FEATURE_CACHE_PATH, help="Path to features parquet."),
-    min_revenue: int = typer.Option(MIN_REVENUE_KSEK, help="Revenue threshold (kSEK)."),
+    min_revenue: int = typer.Option(1000, help="Revenue threshold (kSEK)."),
     n_trials: int = typer.Option(25, help="Number of Optuna trials."),
     mlflow_experiment: Optional[str] = typer.Option(
         None, help="Optional MLflow experiment name for logging."

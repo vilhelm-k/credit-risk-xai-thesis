@@ -283,6 +283,84 @@ ENGINEERED_FEATURE_NAMES = (
 )
 
 # -----------------------------------------------------------------------------
+# Feature groupings by financial statement source (for correlation analysis)
+# -----------------------------------------------------------------------------
+
+# Balance sheet features (br prefix + balance sheet items from NY_COLS and KEPT_RAW_COLS)
+BALANCE_SHEET_FEATURES = (
+    BR_SOURCE_COLS
+    + [
+        # From KEPT_RAW_COLS
+        "br09_tillgsu",  # Total assets
+        "br10_eksu",     # Equity
+        "br07b_kabasu",  # Cash & bank
+        "br13_ksksu",    # Current liabilities
+        "br15_lsksu",    # Long-term liabilities
+        # From NY_COLS (balance sheet ratios)
+        "ny_kapomsh",    # Capital turnover
+        "ny_skuldgrd",   # Debt ratio
+        "ny_solid",      # Equity ratio
+        "ny_kasslikv",   # Cash liquidity
+    ]
+)
+
+# Income statement features (rr prefix + income statement items from NY_COLS and KEPT_RAW_COLS)
+INCOME_STATEMENT_FEATURES = (
+    RR_SOURCE_COLS
+    + [
+        # From KEPT_RAW_COLS
+        "rr01_ntoms",    # Net revenue
+        "rr07_rorresul", # Operating profit
+        "rr15_resar",    # Profit after financial items
+        # From NY_COLS (income statement ratios)
+        "ny_avktokap",   # Return on total capital
+        "ny_avkegkap",   # Return on equity
+        "ny_rorkapo",    # Return on invested capital
+        "ny_rormarg",    # Operating margin
+        "ny_nettomarg",  # Net margin
+        "ny_vinstprc",   # Profit percentage
+    ]
+)
+
+# Derived ratios combining balance sheet and income statement (for separate analysis)
+DERIVED_RATIO_FEATURES = RATIO_FEATURE_NAMES + LIQUIDITY_EFFICIENCY_FEATURES
+
+# Working capital efficiency metrics (subset of derived ratios, spans BS + IS)
+WORKING_CAPITAL_FEATURES = [
+    "dso_days",
+    "inventory_days",
+    "dpo_days",
+    "dso_days_yoy_diff",
+    "inventory_days_yoy_diff",
+    "dpo_days_yoy_diff",
+    "dso_days_trend_3y",
+    "inventory_days_trend_3y",
+    "dpo_days_trend_3y",
+    "ratio_nwc_sales",
+]
+
+# Operational ratios (subset related to operating performance)
+OPERATIONAL_FEATURES = [
+    "ny_omspanst",    # Revenue per employee
+    "ny_foradlvpanst",  # Value added per employee
+    "ny_omsf",        # Asset turnover
+    "ny_anstf",       # Asset per employee
+    "bslov_antanst",  # Number of employees
+]
+
+# Standard feature groupings by source for correlation analysis
+FEATURE_GROUPS_BY_SOURCE = {
+    "BALANCE_SHEET": BALANCE_SHEET_FEATURES,
+    "INCOME_STATEMENT": INCOME_STATEMENT_FEATURES,
+    "DERIVED_RATIOS": DERIVED_RATIO_FEATURES,
+    "WORKING_CAPITAL": WORKING_CAPITAL_FEATURES,
+    "TRENDS": TREND_FEATURE_NAMES,
+    "CRISIS_HISTORY": CRISIS_FEATURE_NAMES,
+    "MACRO": MACRO_FEATURE_NAMES,
+    "OPERATIONAL": OPERATIONAL_FEATURES,
+}
+
+# -----------------------------------------------------------------------------
 # Modeling configuration
 # -----------------------------------------------------------------------------
 
