@@ -232,7 +232,7 @@ def create_engineered_features(
         "ratio_ebit_interest_cov": _safe_div(
             df["rr07_rorresul"], financial_cost_net
         ),
-        "ratio_ebitda_interest_cov": _safe_div(ebitda, financial_cost_net),
+        # "ratio_ebitda_interest_cov": _safe_div(ebitda, financial_cost_net),  # REMOVED: r=0.99 with ratio_ebit_interest_cov
         "ratio_cash_interest_cov": _safe_div(
             df["br07b_kabasu"], financial_cost_net
         ),
@@ -366,16 +366,17 @@ def create_engineered_features(
     df["years_since_last_credit_event"] = df["ser_year"] - last_event_year
     df.loc[last_event_year.isna(), "years_since_last_credit_event"] = np.nan
 
-    horizons = {
-        "last_event_within_1y": 1,
-        "last_event_within_2y": 2,
-        "last_event_within_3y": 3,
-        "last_event_within_5y": 5,
-    }
-    for col, limit in horizons.items():
-        df[col] = (
-            df["years_since_last_credit_event"].le(limit).fillna(False).astype("Int8")
-        )
+    # REMOVED: Redundant binary flags - years_since_last_credit_event is sufficient
+    # horizons = {
+    #     "last_event_within_1y": 1,
+    #     "last_event_within_2y": 2,
+    #     "last_event_within_3y": 3,
+    #     "last_event_within_5y": 5,
+    # }
+    # for col, limit in horizons.items():
+    #     df[col] = (
+    #         df["years_since_last_credit_event"].le(limit).fillna(False).astype("Int8")
+    #     )
 
     df["event_count_total"] = group["credit_event"].cumsum().astype("Int16")
     df["event_count_last_5y"] = (
@@ -385,7 +386,7 @@ def create_engineered_features(
         .reset_index(level=0, drop=True)
         .astype("Int16")
     )
-    df["ever_failed"] = (df["event_count_total"] > 0).astype("Int8")
+    # df["ever_failed"] = (df["event_count_total"] > 0).astype("Int8")  # REMOVED: Zero importance, redundant with event_count_total
 
     logger.info("Credit event history features computed")
 
@@ -406,9 +407,9 @@ def create_engineered_features(
     df["real_revenue_growth"] = (
         df["rr01_ntoms_yoy_pct"] - df["inflation_yoy"]
     )
-    df["revenue_vs_gdp"] = (
-        df["rr01_ntoms_yoy_pct"] - df["gdp_growth"]
-    )
+    # df["revenue_vs_gdp"] = (  # REMOVED: Nearly identical to real_revenue_growth (r=0.999996)
+    #     df["rr01_ntoms_yoy_pct"] - df["gdp_growth"]
+    # )
     df["profit_vs_gdp"] = (
         df["rr07_rorresul_yoy_pct"] - df["gdp_growth"]
     )

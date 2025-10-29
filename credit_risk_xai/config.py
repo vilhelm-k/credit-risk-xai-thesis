@@ -181,7 +181,7 @@ RATIO_FEATURE_NAMES = [
     "ratio_financial_cost",
     "ratio_ebitda_margin",
     "ratio_ebit_interest_cov",
-    "ratio_ebitda_interest_cov",
+    # "ratio_ebitda_interest_cov",  # REMOVED: Highly correlated with ratio_ebit_interest_cov (r=0.99)
     "ratio_cash_interest_cov",
     "ratio_cash_liquidity",
     "ratio_nwc_sales",
@@ -246,30 +246,30 @@ TREND_FEATURE_NAMES = [
 
 CRISIS_FEATURE_NAMES = [
     "years_since_last_credit_event",
-    "last_event_within_1y",
-    "last_event_within_2y",
-    "last_event_within_3y",
-    "last_event_within_5y",
+    # "last_event_within_1y",  # REMOVED: Redundant with years_since_last_credit_event
+    # "last_event_within_2y",  # REMOVED: Redundant with years_since_last_credit_event
+    # "last_event_within_3y",  # REMOVED: Redundant with years_since_last_credit_event
+    # "last_event_within_5y",  # REMOVED: Redundant with years_since_last_credit_event
     "event_count_total",
     "event_count_last_5y",
-    "ever_failed",
+    # "ever_failed",  # REMOVED: Zero importance, redundant with event_count_total
 ]
 
 MACRO_FEATURE_NAMES = [
     "gdp_growth",
     "gdp_growth_3y_avg",
     "interest_avg_short",
-    "interest_avg_medium",
-    "interest_avg_long",
+    # "interest_avg_medium",  # REMOVED: Highly correlated with short and long rates (r>0.95)
+    # "interest_avg_long",  # REMOVED: Highly correlated with short rate (r=0.88)
     "interest_delta_short",
     "term_spread",
     "term_spread_delta",
     "inflation_yoy",
-    "inflation_trailing_3y",
+    # "inflation_trailing_3y",  # REMOVED: Highly correlated with inflation_yoy (r=0.86)
     "unemp_rate",
     "unemp_delta",
     "real_revenue_growth",
-    "revenue_vs_gdp",
+    # "revenue_vs_gdp",  # REMOVED: Nearly identical to real_revenue_growth (r=0.999996)
     "profit_vs_gdp",
     "revenue_beta_gdp_5y",
 ]
@@ -379,10 +379,10 @@ SME_CATEGORIES = ["Micro", "Small", "Medium", "Large"]
 
 BASE_MODEL_FEATURES = [
     "bslov_antanst",
-    "ser_aktiv",
+    # "ser_aktiv",  # REMOVED: Zero importance (all companies are active in filtered dataset)
     "ser_nystartat",
     "company_age",
-    "ser_stklf",
+    # "ser_stklf", # REMOVED: Duplicative with bslov_antanst
     "bransch_sni071_konv",
     "bransch_borsbransch_konv",
     "ser_laen",

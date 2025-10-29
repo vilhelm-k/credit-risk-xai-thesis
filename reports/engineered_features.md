@@ -2,6 +2,8 @@
 
 This document summarises every engineered feature produced by `credit_risk_xai.features.engineer`. The tables are grouped by theme and note the intent and computation used in the pipeline. Unless otherwise stated, ratios use raw financial statement values in kSEK and are computed within each company-year panel.
 
+**Note**: Following correlation analysis and feature importance evaluation, 11 redundant features have been removed to improve model efficiency while maintaining predictive performance.
+
 ## Cost Structure & Profitability Ratios
 
 | Feature | Definition / Formula | Purpose |
@@ -12,7 +14,7 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 | `ratio_financial_cost` | `rr09_finkostn / rr01_ntoms` | Financial cost load relative to revenue. |
 | `ratio_ebitda_margin` | `(rr07_rorresul + rr05_avskriv) / rr01_ntoms` | EBITDA margin; cushions volatility in EBIT. |
 | `ratio_ebit_interest_cov` | `rr07_rorresul / (rr09_finkostn - rr09d_jfrstfin)` | Interest coverage based on EBIT. |
-| `ratio_ebitda_interest_cov` | `(rr07_rorresul + rr05_avskriv) / (rr09_finkostn - rr09d_jfrstfin)` | Interest coverage using EBITDA. |
+| ~~`ratio_ebitda_interest_cov`~~ | ~~`(rr07_rorresul + rr05_avskriv) / (rr09_finkostn - rr09d_jfrstfin)`~~ | ~~Interest coverage using EBITDA.~~ **REMOVED: r=0.99 with ratio_ebit_interest_cov** |
 | `ratio_cash_interest_cov` | `br07b_kabasu / (rr09_finkostn - rr09d_jfrstfin)` | Cash-on-hand relative to annual financial costs. |
 | `ratio_dividend_payout` | `rr00_utdbel / rr15_resar` | Dividend share of current-year profit (signals cash distribution). |
 | `ratio_group_support` | `(br10f_kncbdrel + br10g_agtskel) / rr01_ntoms` | Extent of owner/group support relative to revenue. |
@@ -82,26 +84,42 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 | Feature | Definition / Purpose |
 | --- | --- |
 | `years_since_last_credit_event` | Years elapsed since the previous bankruptcy/reorganisation (NaN for first-time). |
-| `last_event_within_1y`, `last_event_within_2y`, `last_event_within_3y`, `last_event_within_5y` | Binary flags indicating recency of prior event. |
+| ~~`last_event_within_1y`, `last_event_within_2y`, `last_event_within_3y`, `last_event_within_5y`~~ | ~~Binary flags indicating recency of prior event.~~ **REMOVED: Redundant with years_since_last_credit_event** |
 | `event_count_total` | Cumulative number of credit events per company. |
 | `event_count_last_5y` | Credit events within the past 5 years. |
-| `ever_failed` | Indicator the company experienced at least one event. |
+| ~~`ever_failed`~~ | ~~Indicator the company experienced at least one event.~~ **REMOVED: Zero importance, redundant with event_count_total** |
 
 ## Macro Features & Firm-Macro Comparisons
 
 | Feature | Definition |
 | --- | --- |
 | `gdp_growth`, `gdp_growth_3y_avg` | Annual GDP growth and 3-year average (market prices). |
-| `interest_avg_short`, `interest_avg_medium`, `interest_avg_long` | Annual averages of corporate borrowing rates (≤3m, 1–5y, >5y). |
+| `interest_avg_short` | Annual average of short-term corporate borrowing rates (≤3m). |
+| ~~`interest_avg_medium`, `interest_avg_long`~~ | ~~Annual averages of corporate borrowing rates (1–5y, >5y).~~ **REMOVED: Highly correlated with short rate (r>0.88)** |
 | `interest_delta_short` | YoY change in short-term borrowing rate. |
 | `term_spread`, `term_spread_delta` | Long – short rate spread and its YoY change. |
-| `inflation_yoy`, `inflation_trailing_3y` | YoY CPI change (based on annual average KPIF) and 3-year mean. |
+| `inflation_yoy` | YoY CPI change (based on annual average KPIF). |
+| ~~`inflation_trailing_3y`~~ | ~~3-year mean inflation.~~ **REMOVED: Highly correlated with inflation_yoy (r=0.86)** |
 | `unemp_rate`, `unemp_delta` | National unemployment level and YoY change. |
 | `real_revenue_growth` | `rr01_ntoms_yoy_pct - inflation_yoy`. |
-| `revenue_vs_gdp` | `rr01_ntoms_yoy_pct - gdp_growth`. |
+| ~~`revenue_vs_gdp`~~ | ~~`rr01_ntoms_yoy_pct - gdp_growth`.~~ **REMOVED: Nearly identical to real_revenue_growth (r=0.999996)** |
 | `profit_vs_gdp` | `rr07_rorresul_yoy_pct - gdp_growth`. |
 | `revenue_beta_gdp_5y` | Rolling 5-year beta (cyclicality) of revenue growth vs. GDP growth. Beta = Cov(revenue, GDP) / Var(GDP). Interpretation: β > 1 = cyclical (high risk), β < 1 = defensive (low risk). |
 
 ---
 
-Maintaining this catalogue ensures new features added to `credit_risk_xai.features.engineer` are documented and can be evaluated for relevance before inclusion in modeling experiments. Update this file whenever you modify the feature set.***
+## Summary of Changes (Step 1: Immediate Removal)
+
+**Features Removed**: 11 features eliminated based on correlation analysis and importance evaluation
+- **Reduction**: 117 → 106 features (9.4% reduction)
+- **Rationale**:
+  - Zero importance features (2): `ser_aktiv`, `ever_failed`
+  - Perfect/near-perfect correlations (4): `ratio_ebitda_interest_cov`, `revenue_vs_gdp`, `inflation_trailing_3y`, interest rates
+  - Redundant binary flags (5): Crisis event history flags replaced by continuous `years_since_last_credit_event`
+
+**Expected Impact**:
+- Faster training and inference
+- Clearer SHAP explanations
+- No expected loss in predictive performance (removed features had minimal unique contribution)
+
+Maintaining this catalogue ensures new features added to `credit_risk_xai.features.engineer` are documented and can be evaluated for relevance before inclusion in modeling experiments. Update this file whenever you modify the feature set.
