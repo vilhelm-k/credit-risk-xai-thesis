@@ -212,7 +212,7 @@ def log_wandb(
     )
 
     fraction_of_positives, mean_predicted_value = calibration_curve(
-        y_val, proba[:, 1], n_bins=20, strategy='quantile'
+        y_val, proba, n_bins=20, strategy='quantile'
     )
     
     wandb.log(
