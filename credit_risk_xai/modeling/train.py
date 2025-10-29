@@ -24,8 +24,9 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
+from sklearn.calibration import calibration_curve
 
-from credit_risk_xai.config import FEATURE_CACHE_PATH, FEATURES_FOR_MODEL
+from credit_risk_xai.config import FEATURE_CACHE_PATH, FEATURES_FOR_MODEL, PROJ_ROOT
 from credit_risk_xai.features.engineer import prepare_modeling_data
 from credit_risk_xai.modeling.utils import split_train_validation
 from wandb.sdk.wandb_run import Run
@@ -188,11 +189,12 @@ def log_wandb(
     )
 
     # PR curve - use wandb's built-in
+    proba_2d = np.column_stack([1 - proba, proba])
     wandb.log(
         {
             "plots/pr_curve": wandb.plot.pr_curve(
                 y_true=y_val.tolist(),
-                y_probas=proba.tolist(),
+                y_probas=proba_2d.tolist(),
                 labels=["no_default", "default"],
             )
         }
@@ -203,8 +205,27 @@ def log_wandb(
         {
             "plots/roc_curve": wandb.plot.roc_curve(
                 y_true=y_val.tolist(),
-                y_probas=proba.tolist(),
+                y_probas=proba_2d.tolist(),
                 labels=["no_default", "default"],
+            )
+        }
+    )
+
+    fraction_of_positives, mean_predicted_value = calibration_curve(
+        y_val, proba[:, 1], n_bins=20, strategy='quantile'
+    )
+    
+    wandb.log(
+        {
+            "plots/calibration_curve": wandb.plot.line_series(
+                xs=mean_predicted_value.tolist(),
+                ys=[
+                    fraction_of_positives.tolist(),
+                    mean_predicted_value.tolist(),  # Perfect calibration line
+                ],
+                keys=["Model", "Perfect Calibration"],
+                title="Calibration Curve",
+                xname="Mean Predicted Probability",
             )
         }
     )
@@ -244,6 +265,7 @@ def run_lightgbm_training(
             entity=wandb_entity,
             name=wandb_run_name,
             tags=list(wandb_tags) if wandb_tags else None,
+            dir=PROJ_ROOT,
             config={
                 "random_state": random_state,
                 "test_size": test_size,
