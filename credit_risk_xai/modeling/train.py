@@ -40,6 +40,7 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "colsample_bytree": 0.8,
     "random_state": 42,
     "n_jobs": -1,
+    "verbosity": -1,
     "is_unbalance": False,
     "metric": "logloss",
 }

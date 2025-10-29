@@ -1,0 +1,62 @@
+[
+  {
+    "metric": "revenue",
+    "recommended_config": "cagr",
+    "recommended_auc": 0.962034970235788,
+    "features_to_keep": [
+      "revenue_cagr_3y",
+      "revenue_cagr_5y"
+    ],
+    "num_features": 2
+  },
+  {
+    "metric": "equity",
+    "recommended_config": "cagr+drawdown",
+    "recommended_auc": 0.9613387541894035,
+    "features_to_keep": [
+      "equity_cagr_5y",
+      "equity_drawdown_5y"
+    ],
+    "num_features": 2
+  },
+  {
+    "metric": "operating_margin",
+    "recommended_config": "volatility+average",
+    "recommended_auc": 0.961575650004489,
+    "features_to_keep": [
+      "ny_rormarg_vol_3y",
+      "ny_rormarg_avg_5y"
+    ],
+    "num_features": 2
+  },
+  {
+    "metric": "net_margin",
+    "recommended_config": "average",
+    "recommended_auc": 0.9619002562790232,
+    "features_to_keep": [
+      "ny_nettomarg_avg_2y",
+      "ny_nettomarg_avg_5y"
+    ],
+    "num_features": 2
+  },
+  {
+    "metric": "leverage",
+    "recommended_config": "trend",
+    "recommended_auc": 0.9614175376662013,
+    "features_to_keep": [
+      "ny_skuldgrd_trend_3y"
+    ],
+    "num_features": 1
+  },
+  {
+    "metric": "cash_liquidity",
+    "recommended_config": "volatility+average",
+    "recommended_auc": 0.961336519490394,
+    "features_to_keep": [
+      "ratio_cash_liquidity_vol_3y",
+      "ratio_cash_liquidity_avg_2y",
+      "ratio_cash_liquidity_avg_5y"
+    ],
+    "num_features": 3
+  }
+]
