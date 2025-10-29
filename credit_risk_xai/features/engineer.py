@@ -306,7 +306,8 @@ def create_engineered_features(
     logger.info("Computing year-over-year deltas and immediate trends")
     for col in ["rr01_ntoms", "rr07_rorresul", "br09_tillgsu"]:
         new_features[f"{col}_yoy_pct"] = group[col].pct_change(fill_method=None)
-        # new_features[f"{col}_yoy_abs"] = group[col].diff() # REMOVED: Redundant with _pct
+    for col in ["rr01_ntoms", "br09_tillgsu"]:
+        new_features[f"{col}_yoy_abs"] = group[col].diff()
     new_features.update(
         {
             "ny_solid_yoy_diff": group["ny_solid"].diff(),

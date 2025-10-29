@@ -45,9 +45,9 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 
 | Feature | Definition | Purpose |
 | --- | --- | --- |
-| `rr01_ntoms_yoy_pct` | YoY % change in revenue. | Capture growth/direction of sales. |
+| `rr01_ntoms_yoy_pct, rr01_ntoms_yoy_abs` | YoY change in revenue. | Capture growth/direction of sales. |
 | `rr07_rorresul_yoy_pct` | YoY changes in operating profit. | Profit momentum. |
-| `br09_tillgsu_yoy_pct` | YoY asset changes. | Balance sheet expansion. |
+| `br09_tillgsu_yoy_pct, br09_tillgsu_yoy_abs` | YoY asset changes. | Balance sheet expansion. |
 | `ny_solid_yoy_diff` | YoY differences in equity ratio. | Capital structure drift. |
 | `ny_skuldgrd_yoy_diff` | YoY differences in leverage. | Capital structure drift. |
 | `ratio_cash_liquidity_yoy_pct` | YoY change in quick ratio. | Liquidity trend. |

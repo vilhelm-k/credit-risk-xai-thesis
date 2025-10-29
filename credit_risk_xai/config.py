@@ -206,11 +206,11 @@ LIQUIDITY_EFFICIENCY_FEATURES = [
 
 TREND_FEATURE_NAMES = [
     "rr01_ntoms_yoy_pct",
-    # "rr01_ntoms_yoy_abs", # REMOVED: Redundant
+    "rr01_ntoms_yoy_abs",
     "rr07_rorresul_yoy_pct",
     # "rr07_rorresul_yoy_abs", # REMOVED: Redundant
     "br09_tillgsu_yoy_pct",
-    # "br09_tillgsu_yoy_abs", # REMOVED: Redundant
+    "br09_tillgsu_yoy_abs",
     "ny_solid_yoy_diff",
     "ny_skuldgrd_yoy_diff",
     "ratio_cash_liquidity_yoy_pct",
