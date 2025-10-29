@@ -1,22 +1,70 @@
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 import lightgbm as lgb
-import mlflow
-import optuna
+import numpy as np
 import pandas as pd
 import typer
+import wandb
+from wandb.integration.lightgbm import wandb_callback, log_summary
 from loguru import logger
-from sklearn.metrics import average_precision_score, roc_auc_score
+from sklearn.metrics import (
+    average_precision_score,
+    brier_score_loss,
+    confusion_matrix,
+    f1_score,
+    classification_report,
+    log_loss,
+    precision_recall_curve,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 
-from credit_risk_xai.config import FEATURE_CACHE_PATH
+from credit_risk_xai.config import FEATURE_CACHE_PATH, FEATURES_FOR_MODEL
 from credit_risk_xai.features.engineer import prepare_modeling_data
-from credit_risk_xai.modeling.utils import positive_class_weight, split_train_validation
+from credit_risk_xai.modeling.utils import split_train_validation
+from wandb.sdk.wandb_run import Run
 
-app = typer.Typer(help="Model training utilities (LightGBM + Optuna + MLflow).")
+DEFAULT_PARAMS: Dict[str, Any] = {
+    "objective": "binary",
+    "n_estimators": 10_000,
+    "learning_rate": 0.05,
+    "num_leaves": 31,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "random_state": 42,
+    "n_jobs": -1,
+    "is_unbalance": False,
+    "metric": "logloss",
+}
+
+
+def apply_default_filters(df: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
+    mask = (df["ser_aktiv"] == 1) & (df["sme_category"].isin(["Small", "Medium"]))
+    filtered = df.loc[mask].copy()
+    description = "ser_aktiv == 1 AND sme_category in ['Small', 'Medium']"
+    return filtered, description
+
+
+def expected_calibration_error(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 20) -> float:
+    bins = np.linspace(0.0, 1.0, n_bins + 1)
+    binids = np.digitize(y_prob, bins) - 1
+    ece = 0.0
+    total = len(y_true)
+    for i in range(n_bins):
+        mask = binids == i
+        count = np.sum(mask)
+        if count == 0:
+            continue
+        avg_confidence = y_prob[mask].mean()
+        avg_accuracy = y_true[mask].mean()
+        ece += (count / total) * abs(avg_confidence - avg_accuracy)
+    return float(ece)
 
 
 def train_lightgbm(
@@ -24,193 +72,292 @@ def train_lightgbm(
     y_train: pd.Series,
     X_val: pd.DataFrame,
     y_val: pd.Series,
-    params: Optional[Dict] = None,
-    num_boost_round: int = 10_000,
-    early_stopping_rounds: int = 50,
-    eval_metric: str = "auc",
-    verbose_eval: int = 100,
-) -> tuple[lgb.LGBMClassifier, Dict[str, float], float]:
-    """
-    Train a LightGBM classifier with early stopping and return model + metrics.
-    """
-    scale_pos_weight = positive_class_weight(y_train)
-    default_params = {
-        "objective": "binary",
-        "n_estimators": num_boost_round,
-        "learning_rate": 0.05,
-        "num_leaves": 31,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "random_state": 42,
-        "n_jobs": -1,
-        "is_unbalance": False,
-        "scale_pos_weight": scale_pos_weight,
-        "reg_alpha": 0.1,
-        "reg_lambda": 0.1,
-        "metric": eval_metric,
-    }
+    params: Optional[Dict[str, Any]],
+    eval_metric: str,
+    early_stopping_rounds: int,
+    log_frequency: int,
+) -> Tuple[lgb.LGBMClassifier, Dict[str, float], float]:
+    merged_params = dict(DEFAULT_PARAMS)
+    merged_params["metric"] = eval_metric
     if params:
-        default_params.update(params)
+        merged_params.update(params)
 
-    model = lgb.LGBMClassifier(**default_params)
-    start = time.time()
+    model = lgb.LGBMClassifier(**merged_params)
+    
+    # Use official wandb callback - it handles iteration logging automatically
+    booster_callbacks = [
+        lgb.early_stopping(early_stopping_rounds, verbose=False),
+        lgb.log_evaluation(period=log_frequency),
+        wandb_callback() if wandb.run else None,  # Official integration
+    ]
+    
+    start = time.perf_counter()
     model.fit(
         X_train,
         y_train,
         eval_set=[(X_train, y_train), (X_val, y_val)],
         eval_metric=eval_metric,
-        callbacks=[
-            lgb.early_stopping(early_stopping_rounds, verbose=False),
-            lgb.log_evaluation(period=verbose_eval),
-        ],
+        callbacks=booster_callbacks,
     )
-    training_time = time.time() - start
+    duration = time.perf_counter() - start
 
-    y_pred_proba = model.predict_proba(X_val)[:, 1]
+    proba = model.predict_proba(X_val)[:, 1]
+    preds = (proba >= 0.5).astype(int)
+
+    ece = expected_calibration_error(y_val.to_numpy(), proba)
     metrics = {
-        "auc": roc_auc_score(y_val, y_pred_proba),
-        "average_precision": average_precision_score(y_val, y_pred_proba),
+        "roc_auc": roc_auc_score(y_val, proba),
+        "pr_auc": average_precision_score(y_val, proba),
+        "logloss": log_loss(y_val, proba),
+        "brier": brier_score_loss(y_val, proba),
+        "ece": ece,
+        "precision@0.5": precision_score(y_val, preds, zero_division=0),
+        "recall@0.5": recall_score(y_val, preds, zero_division=0),
+        "f1@0.5": f1_score(y_val, preds, zero_division=0),
     }
-    return model, metrics, training_time
+    
+    # No need to return evals_result anymore
+    return model, metrics, duration
 
 
-def run_optuna_study(
+def feature_importance(model: lgb.LGBMClassifier, feature_names: Sequence[str]) -> pd.DataFrame:
+    booster = model.booster_
+    gain = booster.feature_importance(importance_type="gain")
+    split = booster.feature_importance(importance_type="split")
+    total_gain = np.sum(gain) or 1.0
+    return (
+        pd.DataFrame(
+            {
+                "feature": feature_names,
+                "gain": gain,
+                "gain_pct": gain / total_gain,
+                "split": split,
+            }
+        )
+        .sort_values("gain", ascending=False)
+        .reset_index(drop=True)
+    )
+
+def log_wandb(
+    run: Run,
+    model: lgb.LGBMClassifier,
+    metrics: Dict[str, float],
+    dataset_description: str,
+    feature_names: Sequence[str],
+    X_train_shape: Tuple[int, int],
+    X_val_shape: Tuple[int, int],
+    y_val: pd.Series,
+    proba: np.ndarray,
+    training_time: float,
+) -> None:
+    preds = (proba >= 0.5).astype(int)
+
+    # Log config
+    run.config.update(
+        {
+            "model_params": model.get_params(),
+            "features": list(feature_names),
+            "dataset_description": dataset_description,
+        },
+        allow_val_change=True,
+    )
+
+    # Log final metrics (standard + custom)
+    wandb.log({f"metrics/{k}": v for k, v in metrics.items()})
+    wandb.log(
+        {
+            "dataset/train_samples": X_train_shape[0],
+            "dataset/train_features": X_train_shape[1],
+            "dataset/val_samples": X_val_shape[0],
+            "dataset/val_features": X_val_shape[1],
+            "dataset/val_positive_rate": float(np.mean(y_val)),
+            "metrics/best_iteration": model.best_iteration_,
+            "metrics/training_time": training_time,
+        }
+    )
+
+    # Confusion matrix - you're already doing this correctly
+    wandb.log(
+        {
+            "plots/confusion_matrix": wandb.plot.confusion_matrix(
+                y_true=y_val.tolist(),
+                preds=preds.tolist(),
+                class_names=["no_default", "default"],
+            )
+        }
+    )
+
+    # PR curve - use wandb's built-in
+    wandb.log(
+        {
+            "plots/pr_curve": wandb.plot.pr_curve(
+                y_true=y_val.tolist(),
+                y_probas=proba.tolist(),
+                labels=["no_default", "default"],
+            )
+        }
+    )
+
+    # ROC curve - use wandb's built-in
+    wandb.log(
+        {
+            "plots/roc_curve": wandb.plot.roc_curve(
+                y_true=y_val.tolist(),
+                y_probas=proba.tolist(),
+                labels=["no_default", "default"],
+            )
+        }
+    )
+
+    # Use official log_summary - handles feature importance chart + model artifact
+    log_summary(model.booster_, save_model_checkpoint=True)
+
+def run_lightgbm_training(
     X: pd.DataFrame,
     y: pd.Series,
-    n_trials: int = 50,
-    timeout: Optional[int] = None,
-    study_name: Optional[str] = None,
-    direction: str = "maximize",
-    mlflow_experiment: Optional[str] = None,
+    *,
+    dataset_description: Optional[str] = None,
+    params: Optional[Dict[str, Any]] = None,
+    eval_metric: str = "logloss",
     test_size: float = 0.2,
     random_state: int = 42,
-) -> optuna.Study:
-    """
-    Optimise LightGBM hyperparameters with Optuna and (optionally) MLflow logging.
-    """
-
-    if mlflow_experiment:
-        mlflow.set_experiment(mlflow_experiment)
-
-    def objective(trial: optuna.Trial) -> float:
-        params = {
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
-            "num_leaves": trial.suggest_int("num_leaves", 16, 256),
-            "min_child_samples": trial.suggest_int("min_child_samples", 10, 200),
-            "subsample": trial.suggest_float("subsample", 0.5, 1.0),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-            "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 1.0, log=True),
-            "reg_lambda": trial.suggest_float("reg_lambda", 1e-3, 1.0, log=True),
-        }
-
-        X_train, X_val, y_train, y_val = split_train_validation(
-            X,
-            y,
-            test_size=test_size,
-            random_state=random_state + trial.number,
-        )
-
-        with mlflow.start_run(run_name=f"trial_{trial.number}", nested=True) if mlflow_experiment else _nullcontext():
-            model, metrics, training_time = train_lightgbm(
-                X_train,
-                y_train,
-                X_val,
-                y_val,
-                params=params,
-                verbose_eval=0,
-            )
-
-            if mlflow_experiment:
-                mlflow.log_params(params)
-                mlflow.log_metric("auc", metrics["auc"])
-                mlflow.log_metric("average_precision", metrics["average_precision"])
-                mlflow.log_metric("training_time", training_time)
-
-        return metrics["auc"]
-
-    study = optuna.create_study(direction=direction, study_name=study_name)
-    logger.info("Starting Optuna study (%d trials, direction=%s)", n_trials, direction)
-    study.optimize(objective, n_trials=n_trials, timeout=timeout)
-    logger.success("Optuna completed. Best trial: %.4f (params=%s)", study.best_value, study.best_params)
-    return study
-
-
-class _NullContext:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        return False
-
-
-def _nullcontext():
-    return _NullContext()
-
-
-@app.command("lightgbm")
-def cli_train_lightgbm(
-    feature_path: Path = typer.Option(FEATURE_CACHE_PATH, help="Path to features parquet."),
-    min_revenue: int = typer.Option(1000, help="Revenue threshold (kSEK)."),
-    test_size: float = typer.Option(0.2, help="Validation split fraction."),
-    random_state: int = typer.Option(42, help="Random seed."),
-    output_model: Optional[Path] = typer.Option(None, help="Optional path to save trained model."),
-) -> None:
-    """Train a simple LightGBM model on the processed feature dataset."""
-    if not feature_path.exists():
-        raise FileNotFoundError(f"Feature matrix not found: {feature_path}. Run feature pipeline first.")
-
-    df = pd.read_parquet(feature_path)
-    # Apply filtering: active companies with minimum revenue
-    filtered = df[(df["ser_aktiv"] == 1) & (df["rr01_ntoms"] >= min_revenue)]
-    X, y = prepare_modeling_data(filtered)
+    early_stopping_rounds: int = 50,
+    log_frequency: int = 50,
+    use_wandb: bool = False,
+    wandb_project: Optional[str] = None,
+    wandb_entity: Optional[str] = None,
+    wandb_run_name: Optional[str] = None,
+    wandb_tags: Optional[Iterable[str]] = None,
+) -> Dict[str, Any]:
+    if dataset_description is None:
+        dataset_description = "User supplied dataset (no description provided)."
+    
     X_train, X_val, y_train, y_val = split_train_validation(
         X, y, test_size=test_size, random_state=random_state
     )
 
-    logger.info(
-        "Training LightGBM on %d features (%d train / %d val)",
-        X.shape[1],
-        len(X_train),
-        len(X_val),
+    # Start wandb run BEFORE training (so callback works)
+    run = None
+    if use_wandb:
+        run = wandb.init(
+            project=wandb_project,
+            entity=wandb_entity,
+            name=wandb_run_name,
+            tags=list(wandb_tags) if wandb_tags else None,
+            config={
+                "random_state": random_state,
+                "test_size": test_size,
+                "eval_metric": eval_metric,
+                "early_stopping_rounds": early_stopping_rounds,
+                "log_frequency": log_frequency,
+            },
+        )
+
+    model, metrics, elapsed = train_lightgbm(
+        X_train,
+        y_train,
+        X_val,
+        y_val,
+        params=params,
+        eval_metric=eval_metric,
+        early_stopping_rounds=early_stopping_rounds,
+        log_frequency=log_frequency,
     )
 
-    model, metrics, training_time = train_lightgbm(X_train, y_train, X_val, y_val)
-    logger.success(
-        "Validation AUC=%.4f | PR-AUC=%.4f | training_time=%.1fs",
-        metrics["auc"],
-        metrics["average_precision"],
-        training_time,
-    )
+    proba = model.predict_proba(X_val)[:, 1]
+    preds = (proba >= 0.5).astype(int)
+    report_data = classification_report(y_val, preds, output_dict=True, zero_division=0)
+    cm_array = confusion_matrix(y_val, preds, labels=[0, 1])
+    importance_df = feature_importance(model, X_train.columns)
 
-    if output_model:
-        output_model.parent.mkdir(parents=True, exist_ok=True)
-        model.booster_.save_model(output_model)
-        logger.info("Saved LightGBM model to %s", output_model)
+    results = {
+        "model": model,
+        "metrics": metrics,
+        "dataset_description": dataset_description,
+        "training_time": elapsed,
+        "feature_importance": importance_df,
+        "y_val": y_val,
+        "y_val_proba": proba,
+        "classification_report": report_data,
+        "confusion_matrix": cm_array,
+    }
+
+    if use_wandb and run:
+        log_wandb(
+            run,
+            model=model,
+            metrics=metrics,
+            dataset_description=dataset_description,
+            feature_names=X_train.columns,
+            X_train_shape=X_train.shape,
+            X_val_shape=X_val.shape,
+            y_val=y_val,
+            proba=proba,
+            training_time=elapsed,
+        )
+        run.finish()
+
+    return results
 
 
-@app.command("optuna")
-def cli_run_optuna(
+app = typer.Typer()
+
+
+@app.command()
+def train(
     feature_path: Path = typer.Option(FEATURE_CACHE_PATH, help="Path to features parquet."),
-    min_revenue: int = typer.Option(1000, help="Revenue threshold (kSEK)."),
-    n_trials: int = typer.Option(25, help="Number of Optuna trials."),
-    mlflow_experiment: Optional[str] = typer.Option(
-        None, help="Optional MLflow experiment name for logging."
+    dataset_description: Optional[str] = typer.Option(
+        None, help="Optional free-text description of dataset filters."
     ),
+    eval_metric: str = typer.Option("logloss"),
+    test_size: float = typer.Option(0.2),
+    random_state: int = typer.Option(42),
+    early_stopping_rounds: int = typer.Option(50),
+    log_frequency: int = typer.Option(50),
+    use_wandb: bool = typer.Option(False, help="Enable Weights & Biases logging."),
+    wandb_project: Optional[str] = typer.Option(None),
+    wandb_entity: Optional[str] = typer.Option(None),
+    wandb_run_name: Optional[str] = typer.Option(None),
+    wandb_tags: Optional[str] = typer.Option(None, help="Comma separated tags."),
+    params: Optional[str] = typer.Option(None, help="JSON dict of LightGBM params."),
 ) -> None:
-    """Run hyperparameter optimisation using Optuna (and optionally MLflow)."""
     if not feature_path.exists():
-        raise FileNotFoundError(f"Feature matrix not found: {feature_path}.")
+        raise FileNotFoundError(f"Feature matrix not found: {feature_path}")
 
     df = pd.read_parquet(feature_path)
-    # Apply filtering: active companies with minimum revenue
-    filtered = df[(df["ser_aktiv"] == 1) & (df["rr01_ntoms"] >= min_revenue)]
-    X, y = prepare_modeling_data(filtered)
+    parsed_params = json.loads(params) if params else None
+    tag_list = [tag.strip() for tag in wandb_tags.split(",")] if wandb_tags else None
 
-    run_optuna_study(
-        X,
-        y,
-        n_trials=n_trials,
-        mlflow_experiment=mlflow_experiment,
+    filtered_df, default_desc = apply_default_filters(df)
+    if dataset_description is None:
+        dataset_description = default_desc
+    X, y = prepare_modeling_data(filtered_df)
+
+    results = run_lightgbm_training(
+        X=X,
+        y=y,
+        dataset_description=dataset_description,
+        params=parsed_params,
+        eval_metric=eval_metric,
+        test_size=test_size,
+        random_state=random_state,
+        early_stopping_rounds=early_stopping_rounds,
+        log_frequency=log_frequency,
+        use_wandb=use_wandb,
+        wandb_project=wandb_project,
+        wandb_entity=wandb_entity,
+        wandb_run_name=wandb_run_name,
+        wandb_tags=tag_list,
+    )
+
+    metrics = results["metrics"]
+    logger.info(
+        "Validation metrics | AUC %.4f | PR-AUC %.4f | LogLoss %.4f | Precision@0.5 %.3f | Recall@0.5 %.3f",
+        metrics["roc_auc"],
+        metrics["pr_auc"],
+        metrics["logloss"],
+        metrics["precision@0.5"],
+        metrics["recall@0.5"],
     )
 
 

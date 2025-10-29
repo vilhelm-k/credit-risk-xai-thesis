@@ -1,6 +1,6 @@
 """Model training, evaluation, and explainability utilities."""
 
-from .train import train_lightgbm, run_optuna_study  # noqa: F401
+from .train import train_lightgbm, run_lightgbm_training  # noqa: F401
 from .evaluate import classification_summary, plot_roc_curve, plot_pr_curve  # noqa: F401
 from .explain import (  # noqa: F401
     compute_shap_values,
