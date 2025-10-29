@@ -89,8 +89,9 @@ def train_lightgbm(
     booster_callbacks = [
         lgb.early_stopping(early_stopping_rounds, verbose=False),
         lgb.log_evaluation(period=log_frequency),
-        wandb_callback() if wandb.run else None,  # Official integration
     ]
+    if wandb.run is not None:
+        booster_callbacks.append(wandb_callback())
     
     start = time.perf_counter()
     model.fit(
@@ -298,6 +299,9 @@ def run_lightgbm_training(
         "dataset_description": dataset_description,
         "training_time": elapsed,
         "feature_importance": importance_df,
+        "X_train": X_train,
+        "X_val": X_val,
+        "y_train": y_train,
         "y_val": y_val,
         "y_val_proba": proba,
         "classification_report": report_data,
