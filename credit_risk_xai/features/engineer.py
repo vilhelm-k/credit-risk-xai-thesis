@@ -236,6 +236,10 @@ def create_engineered_features(
         "ratio_cash_interest_cov": _safe_div(
             df["br07b_kabasu"], financial_cost_net
         ),
+        "ratio_intragroup_financing_share": _safe_div(
+            df["rr08a_rteinknc"] + df["rr09a_rtekoknc"],
+            df["rr08_finintk"] + df["rr09_finkostn"],
+        ),
     })
 
     logger.info("Computing liquidity and working-capital efficiencies")
@@ -250,6 +254,9 @@ def create_engineered_features(
         "inventory_days": _safe_div(df["br06c_lagersu"], df["rr06a_prodkos"])
         * 365,
         "dpo_days": _safe_div(df["br13a_ksklev"], df["rr06a_prodkos"]) * 365,
+        "cash_conversion_cycle": _safe_div(df["br06g_kfordsu"], df["rr01_ntoms"]) * 365
+        + _safe_div(df["br06c_lagersu"], df["rr06a_prodkos"]) * 365
+        - _safe_div(df["br13a_ksklev"], df["rr06a_prodkos"]) * 365,
         "ratio_nwc_sales": _safe_div(
             df["br06_lagerkford"]
             + df["br07_kplackaba"]
@@ -267,9 +274,12 @@ def create_engineered_features(
         "ratio_retained_earnings_equity": _safe_div(
             df["br10e_balres"], df["br10_eksu"]
         ),
-        "ratio_share_capital_equity": _safe_div(
-            df["br10a_aktiekap"], df["br10_eksu"]
-        ),
+        # "ratio_share_capital_equity": _safe_div(
+        #     df["br10a_aktiekap"], df["br10_eksu"]
+        # ), # REMOVED: Low importance
+        "equity_to_sales": _safe_div(df["br10_eksu"], df["rr01_ntoms"]),
+        "equity_to_profit": _safe_div(df["br10_eksu"], df["rr15_resar"]),
+        "assets_to_profit": _safe_div(df["br09_tillgsu"], df["rr15_resar"]),
         "ratio_dividend_payout": _safe_div(
             df["rr00_utdbel"], df["rr15_resar"]
         ),
@@ -296,7 +306,7 @@ def create_engineered_features(
     logger.info("Computing year-over-year deltas and immediate trends")
     for col in ["rr01_ntoms", "rr07_rorresul", "br09_tillgsu"]:
         new_features[f"{col}_yoy_pct"] = group[col].pct_change(fill_method=None)
-        new_features[f"{col}_yoy_abs"] = group[col].diff()
+        # new_features[f"{col}_yoy_abs"] = group[col].diff() # REMOVED: Redundant with _pct
     new_features.update(
         {
             "ny_solid_yoy_diff": group["ny_solid"].diff(),
@@ -332,6 +342,7 @@ def create_engineered_features(
     # Continue collecting features to minimize joins
     new_features.update({
         "ny_rormarg_trend_3y": _rolling_slope(df["ny_rormarg"], window=3),
+        "ny_nettomarg_trend_3y": _rolling_slope(df["ny_nettomarg"], window=3),
         "ny_skuldgrd_trend_3y": _rolling_slope(df["ny_skuldgrd"], window=3),
         "ratio_cash_liquidity_trend_3y": _rolling_slope(df["ratio_cash_liquidity"], window=3),
         "dso_days_yoy_diff": group["dso_days"].diff(),
@@ -341,16 +352,21 @@ def create_engineered_features(
         "inventory_days_trend_3y": _rolling_slope(df["inventory_days"], window=3),
         "dpo_days_trend_3y": _rolling_slope(df["dpo_days"], window=3),
         "ny_rormarg_trend_5y": _rolling_slope(df["ny_rormarg"], window=5),
+        "ny_nettomarg_trend_5y": _rolling_slope(df["ny_nettomarg"], window=5),
         "ny_skuldgrd_trend_5y": _rolling_slope(df["ny_skuldgrd"], window=5),
         "ratio_cash_liquidity_trend_5y": _rolling_slope(df["ratio_cash_liquidity"], window=5),
         "ny_rormarg_vol_3y": _rolling_std(df["ny_rormarg"], window=3),
+        "ny_nettomarg_vol_3y": _rolling_std(df["ny_nettomarg"], window=3),
         "ny_skuldgrd_vol_3y": _rolling_std(df["ny_skuldgrd"], window=3),
         "ratio_cash_liquidity_vol_3y": _rolling_std(df["ratio_cash_liquidity"], window=3),
         "ny_rormarg_vol_5y": _rolling_std(df["ny_rormarg"], window=5),
+        "ny_nettomarg_vol_5y": _rolling_std(df["ny_nettomarg"], window=5),
         "ny_skuldgrd_vol_5y": _rolling_std(df["ny_skuldgrd"], window=5),
         "ny_rormarg_avg_2y": _rolling_avg(df["ny_rormarg"], window=2),
+        "ny_nettomarg_avg_2y": _rolling_avg(df["ny_nettomarg"], window=2),
         "ratio_cash_liquidity_avg_2y": _rolling_avg(df["ratio_cash_liquidity"], window=2),
         "ny_rormarg_avg_5y": _rolling_avg(df["ny_rormarg"], window=5),
+        "ny_nettomarg_avg_5y": _rolling_avg(df["ny_nettomarg"], window=5),
         "ratio_cash_liquidity_avg_5y": _rolling_avg(df["ratio_cash_liquidity"], window=5),
         "revenue_drawdown_5y": _rolling_drawdown(df["rr01_ntoms"], window=5),
         "equity_drawdown_5y": _rolling_drawdown(df["br10_eksu"], window=5),
@@ -404,15 +420,15 @@ def create_engineered_features(
     for col in macro_aligned.columns:
         df[col] = macro_matched[col].values
 
-    df["real_revenue_growth"] = (
-        df["rr01_ntoms_yoy_pct"] - df["inflation_yoy"]
-    )
+    # df["real_revenue_growth"] = (
+    #     df["rr01_ntoms_yoy_pct"] - df["inflation_yoy"]
+    # ) # REMOVED: Redundant with ny_omsf
     # df["revenue_vs_gdp"] = (  # REMOVED: Nearly identical to real_revenue_growth (r=0.999996)
     #     df["rr01_ntoms_yoy_pct"] - df["gdp_growth"]
     # )
-    df["profit_vs_gdp"] = (
-        df["rr07_rorresul_yoy_pct"] - df["gdp_growth"]
-    )
+    # df["profit_vs_gdp"] = (
+    #     df["rr07_rorresul_yoy_pct"] - df["gdp_growth"]
+    # ) # REMOVED: Redundant
 
     # Compute revenue beta (cyclicality): beta = cov(revenue, gdp) / var(gdp)
     # Beta interpretation: For every 1% GDP growth, revenue grows by beta%

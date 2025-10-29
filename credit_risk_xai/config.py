@@ -65,7 +65,7 @@ NY_COLS = [
     "ny_kasslikv",
     "ny_rormarg",
     "ny_nettomarg",
-    "ny_vinstprc",
+    # "ny_vinstprc", # REMOVED: Redundant with ny_nettomarg
     "ny_omspanst",
     "ny_foradlvpanst",
     "ny_omsf",
@@ -188,28 +188,33 @@ RATIO_FEATURE_NAMES = [
     "ratio_short_term_debt_share",
     "ratio_secured_debt_assets",
     "ratio_retained_earnings_equity",
-    "ratio_share_capital_equity",
+    # "ratio_share_capital_equity", # REMOVED: Low importance
     "ratio_dividend_payout",
     "ratio_group_support",
+    "equity_to_sales",
+    "equity_to_profit",
+    "assets_to_profit",
+    "ratio_intragroup_financing_share",
 ]
 
 LIQUIDITY_EFFICIENCY_FEATURES = [
     "dso_days",
     "inventory_days",
     "dpo_days",
+    "cash_conversion_cycle",
 ]
 
 TREND_FEATURE_NAMES = [
     "rr01_ntoms_yoy_pct",
-    "rr01_ntoms_yoy_abs",
+    # "rr01_ntoms_yoy_abs", # REMOVED: Redundant
     "rr07_rorresul_yoy_pct",
-    "rr07_rorresul_yoy_abs",
+    # "rr07_rorresul_yoy_abs", # REMOVED: Redundant
     "br09_tillgsu_yoy_pct",
-    "br09_tillgsu_yoy_abs",
+    # "br09_tillgsu_yoy_abs", # REMOVED: Redundant
     "ny_solid_yoy_diff",
     "ny_skuldgrd_yoy_diff",
     "ratio_cash_liquidity_yoy_pct",
-    "ratio_cash_liquidity_yoy_abs",
+    "ratio_cash_liquidity_yoy_abs", # KEPT: As per user request
     "ratio_ebit_interest_cov_yoy_pct",
     "revenue_cagr_3y",
     "assets_cagr_3y",
@@ -220,25 +225,31 @@ TREND_FEATURE_NAMES = [
     "equity_cagr_5y",
     "profit_cagr_5y",
     "ny_rormarg_trend_3y",
+    "ny_nettomarg_trend_3y",
     "ny_skuldgrd_trend_3y",
     "ratio_cash_liquidity_trend_3y",
     "dso_days_trend_3y",
     "inventory_days_trend_3y",
     "dpo_days_trend_3y",
     "ny_rormarg_trend_5y",
+    "ny_nettomarg_trend_5y",
     "ny_skuldgrd_trend_5y",
     "ratio_cash_liquidity_trend_5y",
     "dso_days_yoy_diff",
     "inventory_days_yoy_diff",
     "dpo_days_yoy_diff",
     "ny_rormarg_vol_3y",
+    "ny_nettomarg_vol_3y",
     "ny_skuldgrd_vol_3y",
     "ratio_cash_liquidity_vol_3y",
     "ny_rormarg_vol_5y",
+    "ny_nettomarg_vol_5y",
     "ny_skuldgrd_vol_5y",
     "ny_rormarg_avg_2y",
+    "ny_nettomarg_avg_2y",
     "ratio_cash_liquidity_avg_2y",
     "ny_rormarg_avg_5y",
+    "ny_nettomarg_avg_5y",
     "ratio_cash_liquidity_avg_5y",
     "revenue_drawdown_5y",
     "equity_drawdown_5y",
@@ -257,20 +268,20 @@ CRISIS_FEATURE_NAMES = [
 
 MACRO_FEATURE_NAMES = [
     "gdp_growth",
-    "gdp_growth_3y_avg",
+    # "gdp_growth_3y_avg", # REMOVED: Redundant
     "interest_avg_short",
     # "interest_avg_medium",  # REMOVED: Highly correlated with short and long rates (r>0.95)
     # "interest_avg_long",  # REMOVED: Highly correlated with short rate (r=0.88)
-    "interest_delta_short",
+    # "interest_delta_short", # REMOVED: Redundant
     "term_spread",
-    "term_spread_delta",
+    # "term_spread_delta", # REMOVED: Redundant
     "inflation_yoy",
     # "inflation_trailing_3y",  # REMOVED: Highly correlated with inflation_yoy (r=0.86)
     "unemp_rate",
-    "unemp_delta",
-    "real_revenue_growth",
+    # "unemp_delta", # REMOVED: Redundant
+    # "real_revenue_growth", # REMOVED: Redundant
     # "revenue_vs_gdp",  # REMOVED: Nearly identical to real_revenue_growth (r=0.999996)
-    "profit_vs_gdp",
+    # "profit_vs_gdp", # REMOVED: Redundant
     "revenue_beta_gdp_5y",
 ]
 

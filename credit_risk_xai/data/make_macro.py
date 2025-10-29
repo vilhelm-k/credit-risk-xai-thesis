@@ -61,8 +61,8 @@ def _load_gdp(path: Path) -> pd.DataFrame:
     df["ser_year"] = pd.to_numeric(df["ser_year"], errors="coerce").astype("Int32")
     df["gdp_growth"] = pd.to_numeric(df["gdp_growth"], errors="coerce").astype("float32")
     df = df.dropna(subset=["ser_year", "gdp_growth"])
-    df["gdp_growth_3y_avg"] = df["gdp_growth"].rolling(window=3, min_periods=2).mean()
-    return df[["ser_year", "gdp_growth", "gdp_growth_3y_avg"]]
+    # df["gdp_growth_3y_avg"] = df["gdp_growth"].rolling(window=3, min_periods=2).mean() # REMOVED
+    return df[["ser_year", "gdp_growth"]]
 
 
 def _load_rates(path: Path) -> pd.DataFrame:
@@ -89,22 +89,20 @@ def _load_rates(path: Path) -> pd.DataFrame:
         df[col] = pd.to_numeric(df[col], errors="coerce").astype("float32")
 
     annual = (
-        df.groupby("ser_year")[numeric_cols]
+        df.groupby("ser_year")[["rate_short", "rate_long"]]
         .mean()
         .rename(
             columns={
-                "All accounts": "interest_avg_all",
                 "rate_short": "interest_avg_short",
-                "rate_medium": "interest_avg_medium",
                 "rate_long": "interest_avg_long",
             }
         )
         .reset_index()
     )
-    annual["interest_delta_short"] = annual["interest_avg_short"].diff()
+    # annual["interest_delta_short"] = annual["interest_avg_short"].diff() # REMOVED
     annual["term_spread"] = annual["interest_avg_long"] - annual["interest_avg_short"]
-    annual["term_spread_delta"] = annual["term_spread"].diff()
-    return annual.drop(columns=["interest_avg_all"])
+    # annual["term_spread_delta"] = annual["term_spread"].diff() # REMOVED
+    return annual.drop(columns=["interest_avg_long"])
 
 
 def _load_inflation(path: Path) -> pd.DataFrame:
@@ -120,10 +118,10 @@ def _load_inflation(path: Path) -> pd.DataFrame:
         .reset_index()
     )
     annual["inflation_yoy"] = annual["kpif_index_avg"].pct_change()
-    annual["inflation_trailing_3y"] = (
-        annual["inflation_yoy"].rolling(window=3, min_periods=2).mean()
-    )
-    return annual.drop(columns=["kpif_index_avg"])
+    # annual["inflation_trailing_3y"] = ( # REMOVED
+    #     annual["inflation_yoy"].rolling(window=3, min_periods=2).mean()
+    # )
+    return annual[["ser_year", "inflation_yoy"]]
 
 
 def _load_unemployment(path: Path) -> pd.DataFrame:
@@ -141,7 +139,7 @@ def _load_unemployment(path: Path) -> pd.DataFrame:
         .sort_values("ser_year")
         .reset_index(drop=True)
     )
-    df["unemp_delta"] = df["unemp_rate"].diff()
+    # df["unemp_delta"] = df["unemp_rate"].diff() # REMOVED
     return df
 
 
