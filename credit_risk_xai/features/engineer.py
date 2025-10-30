@@ -322,16 +322,13 @@ def create_engineered_features(
         }
     )
 
-    # Compute CAGR features
+    # Compute CAGR features (selected via nested CV - see notebooks/03_feature_selection.ipynb)
+    # Only 3y windows were selected; 5y variants did not provide incremental value
     for source, target, window in [
         ("rr01_ntoms", "revenue_cagr_3y", 3),
         ("br09_tillgsu", "assets_cagr_3y", 3),
         ("br10_eksu", "equity_cagr_3y", 3),
         ("rr15_resar", "profit_cagr_3y", 3),
-        ("rr01_ntoms", "revenue_cagr_5y", 5),
-        ("br09_tillgsu", "assets_cagr_5y", 5),
-        ("br10_eksu", "equity_cagr_5y", 5),
-        ("rr15_resar", "profit_cagr_5y", 5),
     ]:
         new_features[target] = _compute_cagr(df[source], window)
 
@@ -339,39 +336,26 @@ def create_engineered_features(
     df = df.join(pd.DataFrame(new_features, index=df.index))
     new_features.clear()
 
-    logger.info("Computing rolling slopes, volatility, averages, and drawdowns")
-    # Continue collecting features to minimize joins
+    logger.info("Computing selected temporal features (working capital trends & drawdowns)")
+    # TEMPORAL FEATURES: Selected via 5×3 nested CV (see notebooks/03_feature_selection.ipynb)
+    # 9 features selected from 34 candidates, achieving 98.4% of full model performance
+
+    # Working capital trends (3y) - early warning signals for operational deterioration
     new_features.update({
-        "ny_rormarg_trend_3y": _rolling_slope(df["ny_rormarg"], window=3),
-        "ny_nettomarg_trend_3y": _rolling_slope(df["ny_nettomarg"], window=3),
-        "ny_skuldgrd_trend_3y": _rolling_slope(df["ny_skuldgrd"], window=3),
-        "ratio_cash_liquidity_trend_3y": _rolling_slope(df["ratio_cash_liquidity"], window=3),
-        "dso_days_yoy_diff": group["dso_days"].diff(),
-        "inventory_days_yoy_diff": group["inventory_days"].diff(),
-        "dpo_days_yoy_diff": group["dpo_days"].diff(),
         "dso_days_trend_3y": _rolling_slope(df["dso_days"], window=3),
         "inventory_days_trend_3y": _rolling_slope(df["inventory_days"], window=3),
         "dpo_days_trend_3y": _rolling_slope(df["dpo_days"], window=3),
-        "ny_rormarg_trend_5y": _rolling_slope(df["ny_rormarg"], window=5),
-        "ny_nettomarg_trend_5y": _rolling_slope(df["ny_nettomarg"], window=5),
-        "ny_skuldgrd_trend_5y": _rolling_slope(df["ny_skuldgrd"], window=5),
-        "ratio_cash_liquidity_trend_5y": _rolling_slope(df["ratio_cash_liquidity"], window=5),
-        "ny_rormarg_vol_3y": _rolling_std(df["ny_rormarg"], window=3),
-        "ny_nettomarg_vol_3y": _rolling_std(df["ny_nettomarg"], window=3),
-        "ny_skuldgrd_vol_3y": _rolling_std(df["ny_skuldgrd"], window=3),
-        "ratio_cash_liquidity_vol_3y": _rolling_std(df["ratio_cash_liquidity"], window=3),
-        "ny_rormarg_vol_5y": _rolling_std(df["ny_rormarg"], window=5),
-        "ny_nettomarg_vol_5y": _rolling_std(df["ny_nettomarg"], window=5),
-        "ny_skuldgrd_vol_5y": _rolling_std(df["ny_skuldgrd"], window=5),
-        "ny_rormarg_avg_2y": _rolling_avg(df["ny_rormarg"], window=2),
-        "ny_nettomarg_avg_2y": _rolling_avg(df["ny_nettomarg"], window=2),
-        "ratio_cash_liquidity_avg_2y": _rolling_avg(df["ratio_cash_liquidity"], window=2),
-        "ny_rormarg_avg_5y": _rolling_avg(df["ny_rormarg"], window=5),
-        "ny_nettomarg_avg_5y": _rolling_avg(df["ny_nettomarg"], window=5),
-        "ratio_cash_liquidity_avg_5y": _rolling_avg(df["ratio_cash_liquidity"], window=5),
+        # Risk metrics (drawdown) - capture downside exposure
         "revenue_drawdown_5y": _rolling_drawdown(df["rr01_ntoms"], window=5),
         "equity_drawdown_5y": _rolling_drawdown(df["br10_eksu"], window=5),
     })
+
+    # EXCLUDED TEMPORAL FEATURES (based on nested CV analysis):
+    # - Margin trends/volatility/averages: Static values + YoY changes are sufficient
+    # - Leverage trends/volatility: Static ny_skuldgrd + YoY changes are sufficient
+    # - Cash liquidity trends/volatility/averages: Static ratio + YoY changes are sufficient
+    # - 5y CAGR variants: 3y windows provide optimal signal without overfitting
+    # These exclusions improve model parsimony without sacrificing performance
 
     # Join all rolling features at once
     df = df.join(pd.DataFrame(new_features, index=df.index))

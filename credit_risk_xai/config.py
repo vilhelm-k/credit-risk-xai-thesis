@@ -216,43 +216,27 @@ TREND_FEATURE_NAMES = [
     "ratio_cash_liquidity_yoy_pct",
     "ratio_cash_liquidity_yoy_abs", # KEPT: As per user request
     "ratio_ebit_interest_cov_yoy_pct",
+    "dso_days_yoy_diff",
+    "inventory_days_yoy_diff",
+    "dpo_days_yoy_diff",
+]
+
+# Temporal features selected via 5×3 nested CV feature selection (Experiment 1-3)
+# See notebooks/03_feature_selection.ipynb for detailed analysis
+# Selection achieved 98.4% of full model performance with only 26.5% of temporal features
+TEMPORAL_FEATURE_NAMES = [
+    # Growth metrics (CAGR) - capture fundamental business momentum
     "revenue_cagr_3y",
     "assets_cagr_3y",
     "equity_cagr_3y",
     "profit_cagr_3y",
-    "revenue_cagr_5y",
-    "assets_cagr_5y",
-    "equity_cagr_5y",
-    "profit_cagr_5y",
-    "ny_rormarg_trend_3y",
-    "ny_nettomarg_trend_3y",
-    "ny_skuldgrd_trend_3y",
-    "ratio_cash_liquidity_trend_3y",
+    # Risk metrics (drawdown) - capture downside exposure
+    "revenue_drawdown_5y",
+    "equity_drawdown_5y",
+    # Working capital trends - early warning signals for operational deterioration
     "dso_days_trend_3y",
     "inventory_days_trend_3y",
     "dpo_days_trend_3y",
-    "ny_rormarg_trend_5y",
-    "ny_nettomarg_trend_5y",
-    "ny_skuldgrd_trend_5y",
-    "ratio_cash_liquidity_trend_5y",
-    "dso_days_yoy_diff",
-    "inventory_days_yoy_diff",
-    "dpo_days_yoy_diff",
-    "ny_rormarg_vol_3y",
-    "ny_nettomarg_vol_3y",
-    "ny_skuldgrd_vol_3y",
-    "ratio_cash_liquidity_vol_3y",
-    "ny_rormarg_vol_5y",
-    "ny_nettomarg_vol_5y",
-    "ny_skuldgrd_vol_5y",
-    "ny_rormarg_avg_2y",
-    "ny_nettomarg_avg_2y",
-    "ratio_cash_liquidity_avg_2y",
-    "ny_rormarg_avg_5y",
-    "ny_nettomarg_avg_5y",
-    "ratio_cash_liquidity_avg_5y",
-    "revenue_drawdown_5y",
-    "equity_drawdown_5y",
 ]
 
 CRISIS_FEATURE_NAMES = [
@@ -289,6 +273,7 @@ ENGINEERED_FEATURE_NAMES = (
     RATIO_FEATURE_NAMES
     + LIQUIDITY_EFFICIENCY_FEATURES
     + TREND_FEATURE_NAMES
+    + TEMPORAL_FEATURE_NAMES
     + CRISIS_FEATURE_NAMES
     + MACRO_FEATURE_NAMES
 )
@@ -344,10 +329,14 @@ WORKING_CAPITAL_FEATURES = [
     "dso_days_yoy_diff",
     "inventory_days_yoy_diff",
     "dpo_days_yoy_diff",
+    "ratio_nwc_sales",
+]
+
+# Working capital temporal features (trends selected via nested CV)
+WORKING_CAPITAL_TEMPORAL_FEATURES = [
     "dso_days_trend_3y",
     "inventory_days_trend_3y",
     "dpo_days_trend_3y",
-    "ratio_nwc_sales",
 ]
 
 # Operational ratios (subset related to operating performance)
@@ -366,6 +355,7 @@ FEATURE_GROUPS_BY_SOURCE = {
     "DERIVED_RATIOS": DERIVED_RATIO_FEATURES,
     "WORKING_CAPITAL": WORKING_CAPITAL_FEATURES,
     "TRENDS": TREND_FEATURE_NAMES,
+    "TEMPORAL": TEMPORAL_FEATURE_NAMES,
     "CRISIS_HISTORY": CRISIS_FEATURE_NAMES,
     "MACRO": MACRO_FEATURE_NAMES,
     "OPERATIONAL": OPERATIONAL_FEATURES,

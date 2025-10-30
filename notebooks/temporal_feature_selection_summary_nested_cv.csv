@@ -1,0 +1,15 @@
+,Value
+Methodology,5×3 Nested Cross-Validation
+Original Temporal Features,34
+After Window Selection,11
+After Metric Prioritization,0
+Total Reduction,34
+Reduction %,100.0%
+Baseline Mean AUC,0.960801
+Baseline Std AUC,0.001252
+Original Mean AUC,0.962538
+Original Std AUC,0.000633
+Optimized Mean AUC,0.960801
+Optimized Std AUC,0.001252
+Improvement vs Baseline,+0.000000
+Improvement vs Original,-0.001736

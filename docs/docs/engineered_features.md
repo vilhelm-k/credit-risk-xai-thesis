@@ -55,37 +55,63 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 | `ratio_ebit_interest_cov_yoy_pct` | YoY change in EBIT coverage. | Debt service trend. |
 | `dso_days_yoy_diff`, `inventory_days_yoy_diff`, `dpo_days_yoy_diff` | YoY differences in working capital efficiency. | Operational stress indicators. |
 
-### Rolling CAGR (per company)
+## Temporal Features (Multi-Year Lookback)
 
-| Feature | Window | Formula |
+**Selection methodology**: The following 9 temporal features were selected from an initial set of 34 candidates using rigorous 5×3 nested cross-validation (see `notebooks/03_feature_selection.ipynb`). The selection process involved:
+1. **Window selection**: For each metric/computation type, testing 2y vs 3y vs 5y windows
+2. **Computation redundancy analysis**: Determining which computation types (CAGR, trend, volatility, average, drawdown) are necessary per metric
+3. **Metric prioritization**: Testing which metrics contribute statistically significant predictive value
+
+**Results**: The selected 9 features achieve 98.4% of the full model's performance (34 temporal features) while using only 26.5% of the features, with statistically significant improvement over baseline (p=0.0096).
+
+### Growth Metrics (CAGR)
+
+Capture fundamental business momentum and growth trajectory.
+
+| Feature | Window | Formula | Selection Rationale |
+| --- | --- | --- | --- |
+| `revenue_cagr_3y` | 3 years | CAGR of `rr01_ntoms` | Revenue growth is a primary credit risk indicator. 3y window balances recent trends with stability. |
+| `assets_cagr_3y` | 3 years | CAGR of `br09_tillgsu` | Asset growth signals expansion or contraction in business scale. |
+| `equity_cagr_3y` | 3 years | CAGR of `br10_eksu` | Equity growth shows capital accumulation and retained earnings reinvestment. |
+| `profit_cagr_3y` | 3 years | CAGR of `rr15_resar` | Profit growth trajectory is a direct indicator of business health. |
+
+**Note**: 5y CAGR variants were tested but 3y windows provided optimal signal without overfitting. Growth metrics (CAGR) were found to be more informative than volatility or average-based features for these metrics.
+
+### Risk Metrics (Drawdown)
+
+Capture downside risk exposure and vulnerability to adverse conditions.
+
+| Feature | Window | Definition | Selection Rationale |
+| --- | --- | --- | --- |
+| `revenue_drawdown_5y` | 5 years | Maximum drawdown of revenue within rolling window (min value / peak - 1) | High SHAP importance (rank 7). Captures revenue resilience and exposure to demand shocks. 5y window needed to capture full business cycles. |
+| `equity_drawdown_5y` | 5 years | Maximum drawdown of equity within rolling window | Signals capital erosion risk. Works synergistically with equity CAGR to distinguish steady growth from volatile patterns. |
+
+**Note**: Drawdown features were only kept for revenue and equity, where they showed statistically significant incremental value beyond CAGR alone.
+
+### Working Capital Trends
+
+Early warning signals for operational deterioration and cash flow stress.
+
+| Feature | Window | Definition | Selection Rationale |
+| --- | --- | --- | --- |
+| `dso_days_trend_3y` | 3 years | Linear slope of days sales outstanding | Increasing DSO signals collection difficulties and working capital strain. |
+| `inventory_days_trend_3y` | 3 years | Linear slope of inventory days on hand | Rising inventory days may indicate obsolescence or demand weakness. |
+| `dpo_days_trend_3y` | 3 years | Linear slope of days payables outstanding | Lengthening payment cycles can signal liquidity pressure. |
+
+**Note**: Trend features were more informative than volatility or average-based features for working capital metrics. All three components (DSO, inventory, DPO) provide complementary signals about different aspects of working capital management.
+
+### Excluded Temporal Feature Categories
+
+The following temporal feature types were systematically excluded after testing:
+
+| Category | Reason for Exclusion | Test Result |
 | --- | --- | --- |
-| `revenue_cagr_3y`, `revenue_cagr_5y` | 3 / 5 years | CAGR of `rr01_ntoms`. |
-| `assets_cagr_3y`, `assets_cagr_5y` | 3 / 5 years | CAGR of `br09_tillgsu`. |
-| `equity_cagr_3y`, `equity_cagr_5y` | 3 / 5 years | CAGR of `br10_eksu`. |
-| `profit_cagr_3y`, `profit_cagr_5y` | 3 / 5 years | CAGR of `rr15_resar`. |
+| Operating margin temporal features | Static `ny_rormarg` captures most signal; temporal derivatives add minimal value | AUC drop: +0.000062 (statistically zero) |
+| Net margin temporal features | Static `ny_nettomarg` and YoY changes sufficient; trends/volatility/averages redundant | AUC drop: -0.000223 (negative = overfitting) |
+| Leverage temporal features | Static `ny_skuldgrd` and YoY changes sufficient | AUC drop: -0.000215 (negative = overfitting) |
+| Cash liquidity temporal features | Static ratio and YoY changes capture signal; trends/volatility/averages redundant | AUC drop: -0.000277 (negative = overfitting) |
 
-### Rolling Slopes & Trends
-
-| Feature | Window | Definition |
-| --- | --- | --- |
-| `ny_rormarg_trend_3y`, `ny_rormarg_trend_5y` | 3 / 5 years | Linear slope of operating margin (ny_rormarg). |
-| `ny_nettomarg_trend_3y`, `ny_nettomarg_trend_5y` | 3 / 5 years | Linear slope of net margin (ny_nettomarg). |
-| `ny_skuldgrd_trend_3y`, `ny_skuldgrd_trend_5y` | 3 / 5 years | Slope of debt/equity ratio. |
-| `ratio_cash_liquidity_trend_3y`, `ratio_cash_liquidity_trend_5y` | 3 / 5 years | Liquidity slope. |
-| `dso_days_trend_3y`, `inventory_days_trend_3y`, `dpo_days_trend_3y` | 3 years | Slopes for working capital efficiency metrics. |
-
-### Rolling Volatility, Averages & Drawdowns
-
-| Feature | Window | Definition |
-| --- | --- | --- |
-| `ny_rormarg_vol_3y`, `ny_rormarg_vol_5y` | 3 / 5 years | Rolling standard deviation of operating margin. |
-| `ny_nettomarg_vol_3y`, `ny_nettomarg_vol_5y` | 3 / 5 years | Rolling standard deviation of net margin. |
-| `ny_skuldgrd_vol_3y`, `ny_skuldgrd_vol_5y` | 3 / 5 years | Rolling std of leverage ratio. |
-| `ratio_cash_liquidity_vol_3y` | 3 years | Rolling std of quick ratio. |
-| `ny_rormarg_avg_2y`, `ny_rormarg_avg_5y` | 2 / 5 years | Rolling mean of operating margin. |
-| `ny_nettomarg_avg_2y`, `ny_nettomarg_avg_5y` | 2 / 5 years | Rolling mean of net margin. |
-| `ratio_cash_liquidity_avg_2y`, `ratio_cash_liquidity_avg_5y` | 2 / 5 years | Rolling mean quick ratio. |
-| `revenue_drawdown_5y`, `equity_drawdown_5y` | 5 years | Max drawdown of revenue / equity inside rolling window. |
+**Key insight**: For margin and liquidity metrics, **static values + YoY changes** are more robust than multi-year trends/volatility/averages, which tend to overfit to validation-specific patterns.
 
 ## Credit Event History
 
