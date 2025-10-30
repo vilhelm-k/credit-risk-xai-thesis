@@ -2,17 +2,17 @@
 
 This document summarises every engineered feature produced by `credit_risk_xai.features.engineer`. The tables are grouped by theme and note the intent and computation used in the pipeline. Unless otherwise stated, ratios use raw financial statement values in kSEK and are computed within each company-year panel.
 
-**Note**: Following an iterative process of correlation analysis and feature importance evaluation, a total of 27 redundant or low-importance features have been removed to improve model efficiency while maintaining predictive performance.
+**Note**: Following an iterative process of correlation analysis and feature importance evaluation, a total of 36 redundant or low-importance features have been removed to improve model efficiency while maintaining predictive performance. Phase 2 pruning (validated via 5-fold CV experiments) removed 9 features based on multicollinearity and empirical ablation tests.
 
 ## Cost Structure & Profitability Ratios
 
 | Feature | Definition / Formula | Purpose |
 | --- | --- | --- |
-| `ratio_personnel_cost` | `rr04_perskos / rr01_ntoms` | Share of net sales consumed by personnel costs. |
-| `ratio_depreciation_cost` | `rr05_avskriv / rr01_ntoms` | Depreciation intensity relative to sales; proxy for capital intensity. |
-| `ratio_other_operating_cost` | `rr06_rorkoov / rr01_ntoms` | Non-personnel operating cost burden. |
-| `ratio_financial_cost` | `rr09_finkostn / rr01_ntoms` | Financial cost load relative to revenue. |
-| `ratio_ebitda_margin` | `(rr07_rorresul + rr05_avskriv) / rr01_ntoms` | EBITDA margin; cushions volatility in EBIT. |
+| `ratio_personnel_cost` | `rr04_perskos / rr01_ntoms` | Share of net sales consumed by personnel costs. Kept despite r=0.91 with ny_nettomarg due to high individual impact (ablation loss: 0.000778). |
+| `ratio_depreciation_cost` | `rr05_avskriv / rr01_ntoms` | Depreciation intensity relative to sales; proxy for capital intensity. Bridges EBITDA→EBIT. |
+| ~~`ratio_other_operating_cost`~~ | ~~`rr06_rorkoov / rr01_ntoms`~~ | **REMOVED**: Lowest ablation impact (-0.000446), 3 red flags, SHAP=0.010. Captured by other profitability metrics. |
+| `ratio_financial_cost` | `rr09_finkostn / rr01_ntoms` | Financial cost load relative to revenue. Kept due to meaningful contribution (ablation loss: 0.000611). |
+| ~~`ratio_ebitda_margin`~~ | ~~`(rr07_rorresul + rr05_avskriv) / rr01_ntoms`~~ | **REMOVED**: Near-perfect correlation with `ny_rormarg` (r=0.998). |
 | `ratio_ebit_interest_cov` | `rr07_rorresul / (rr09_finkostn - rr09d_jfrstfin)` | Interest coverage based on EBIT. |
 | `ratio_cash_interest_cov` | `br07b_kabasu / (rr09_finkostn - rr09d_jfrstfin)` | Cash-on-hand relative to annual financial costs. |
 | `ratio_dividend_payout` | `rr00_utdbel / rr15_resar` | Dividend share of current-year profit (signals cash distribution). |
@@ -27,7 +27,7 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 | `dso_days` | `(br06g_kfordsu / rr01_ntoms) * 365` | Days sales outstanding; receivable collection speed. |
 | `inventory_days` | `(br06c_lagersu / rr06a_prodkos) * 365` | Days inventory on hand. |
 | `dpo_days` | `(br13a_ksklev / rr06a_prodkos) * 365` | Days payables outstanding; supplier payment terms. |
-| `cash_conversion_cycle` | `dso_days + inventory_days - dpo_days` | Overall working capital efficiency. |
+| ~~`cash_conversion_cycle`~~ | ~~`dso_days + inventory_days - dpo_days`~~ | **REMOVED**: High correlation with `dso_days` (r=0.971). |
 | `ratio_nwc_sales` | `(br06_lagerkford + br07_kplackaba - br13_ksksu) / rr01_ntoms` | Net working capital relative to sales. |
 
 ## Capital Structure Detail
@@ -37,7 +37,7 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 | `ratio_short_term_debt_share` | `br13_ksksu / (br13_ksksu + br15_lsksu)` | Share of debt maturing within 12 months. |
 | `ratio_secured_debt_assets` | `(br14_kskkrin + br16_lskkrin) / br09_tillgsu` | Secured debt relative to total assets. |
 | `ratio_retained_earnings_equity` | `br10e_balres / br10_eksu` | Retained earnings composition of equity. |
-| `equity_to_sales` | `br10_eksu / rr01_ntoms` | Equity base relative to sales generation. |
+| `equity_to_sales` | `br10_eksu / rr01_ntoms` | Equity base relative to sales generation. Kept due to meaningful contribution (ablation loss: 0.000598). |
 | `equity_to_profit`| `br10_eksu / rr15_resar` | Equity base relative to net profit generation. |
 | `assets_to_profit`| `br09_tillgsu / rr15_resar` | Asset base relative to net profit generation. |
 
@@ -45,7 +45,7 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 
 | Feature | Definition | Purpose |
 | --- | --- | --- |
-| `rr01_ntoms_yoy_pct, rr01_ntoms_yoy_abs` | YoY change in revenue. | Capture growth/direction of sales. |
+| ~~`rr01_ntoms_yoy_pct`~~, `rr01_ntoms_yoy_abs` | YoY change in revenue. | **REMOVED pct variant**: Perfect correlation with `ny_omsf` (r=1.0). Absolute change retained. |
 | `rr07_rorresul_yoy_pct` | YoY changes in operating profit. | Profit momentum. |
 | `br09_tillgsu_yoy_pct, br09_tillgsu_yoy_abs` | YoY asset changes. | Balance sheet expansion. |
 | `ny_solid_yoy_diff` | YoY differences in equity ratio. | Capital structure drift. |
@@ -118,8 +118,8 @@ The following temporal feature types were systematically excluded after testing:
 | Feature | Definition / Purpose |
 | --- | --- |
 | `years_since_last_credit_event` | Years elapsed since the previous bankruptcy/reorganisation (NaN for first-time). |
-| `event_count_total` | Cumulative number of credit events per company. |
-| `event_count_last_5y` | Credit events within the past 5 years. |
+| ~~`event_count_total`~~ | **REMOVED**: Replaced with `event_count_last_5y` to prevent overfitting to rare historical events (only 0.16% of companies have events older than 5 years). |
+| `event_count_last_5y` | Credit events within the past 5 years. Preferred over total count to avoid data leakage from sparse historical events. |
 
 ## Macro Features & Firm-Macro Comparisons
 

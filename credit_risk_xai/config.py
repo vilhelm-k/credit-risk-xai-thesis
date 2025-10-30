@@ -61,7 +61,7 @@ NY_COLS = [
     "ny_skuldgrd",
     "ny_solid",
     "ny_avkegkap",
-    "ny_rorkapo",
+    # "ny_rorkapo",  # REMOVED: Perfect correlation with ratio_nwc_sales (r≈1.0), more NaNs, slightly lower AUC
     "ny_kasslikv",
     "ny_rormarg",
     "ny_nettomarg",
@@ -78,8 +78,8 @@ KEPT_RAW_COLS = [
     "br10_eksu",
     "bslov_antanst",
     "br07b_kabasu",
-    "br13_ksksu",
-    "br15_lsksu",
+    # "br13_ksksu",  # REMOVED: Bottom 20% in both SHAP (0.0096) and tree importance (1465)
+    # "br15_lsksu",  # REMOVED: Bottom 20% in both SHAP (0.0136) and tree importance (1297)
     "rr07_rorresul",
     "rr15_resar",
 ]
@@ -177,9 +177,9 @@ COLS_TO_LOAD = list(
 RATIO_FEATURE_NAMES = [
     "ratio_personnel_cost",
     "ratio_depreciation_cost",
-    "ratio_other_operating_cost",
+    # "ratio_other_operating_cost",  # REMOVED: Lowest individual impact (-0.000446 AUC), 3 red flags, SHAP=0.010
     "ratio_financial_cost",
-    "ratio_ebitda_margin",
+    # "ratio_ebitda_margin",  # REMOVED: Near-perfect correlation with ny_rormarg (r=0.998)
     "ratio_ebit_interest_cov",
     # "ratio_ebitda_interest_cov",  # REMOVED: Highly correlated with ratio_ebit_interest_cov (r=0.99)
     "ratio_cash_interest_cov",
@@ -201,11 +201,11 @@ LIQUIDITY_EFFICIENCY_FEATURES = [
     "dso_days",
     "inventory_days",
     "dpo_days",
-    "cash_conversion_cycle",
+    # "cash_conversion_cycle",  # REMOVED: High correlation with dso_days (r=0.971)
 ]
 
 TREND_FEATURE_NAMES = [
-    "rr01_ntoms_yoy_pct",
+    # "rr01_ntoms_yoy_pct",  # REMOVED: Perfect correlation with ny_omsf (r=1.0)
     "rr01_ntoms_yoy_abs",
     "rr07_rorresul_yoy_pct",
     # "rr07_rorresul_yoy_abs", # REMOVED: Redundant
@@ -245,7 +245,7 @@ CRISIS_FEATURE_NAMES = [
     # "last_event_within_2y",  # REMOVED: Redundant with years_since_last_credit_event
     # "last_event_within_3y",  # REMOVED: Redundant with years_since_last_credit_event
     # "last_event_within_5y",  # REMOVED: Redundant with years_since_last_credit_event
-    "event_count_total",
+    # "event_count_total",  # REMOVED: Replaced with event_count_last_5y to prevent overfitting to rare historical events
     "event_count_last_5y",
     # "ever_failed",  # REMOVED: Zero importance, redundant with event_count_total
 ]
@@ -381,7 +381,7 @@ SME_CATEGORIES = ["Micro", "Small", "Medium", "Large"]
 BASE_MODEL_FEATURES = [
     "bslov_antanst",
     # "ser_aktiv",  # REMOVED: Zero importance (all companies are active in filtered dataset)
-    "ser_nystartat",
+    # "ser_nystartat",  # REMOVED: Zero variance (SHAP=0.0004)
     "company_age",
     # "ser_stklf", # REMOVED: Duplicative with bslov_antanst
     "bransch_sni071_konv",

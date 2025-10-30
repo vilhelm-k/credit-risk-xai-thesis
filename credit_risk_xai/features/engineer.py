@@ -222,9 +222,9 @@ def create_engineered_features(
         "ratio_depreciation_cost": _safe_div(
             df["rr05_avskriv"], df["rr01_ntoms"]
         ),
-        "ratio_other_operating_cost": _safe_div(
-            df["rr06_rorkoov"], df["rr01_ntoms"]
-        ),
+        # "ratio_other_operating_cost": _safe_div(  # REMOVED: Lowest impact (-0.000446 AUC), 3 red flags
+        #     df["rr06_rorkoov"], df["rr01_ntoms"]
+        # ),
         "ratio_financial_cost": _safe_div(
             df["rr09_finkostn"], df["rr01_ntoms"]
         ),
@@ -304,7 +304,7 @@ def create_engineered_features(
     group = df.groupby(level=0, group_keys=False)
 
     logger.info("Computing year-over-year deltas and immediate trends")
-    for col in ["rr01_ntoms", "rr07_rorresul", "br09_tillgsu"]:
+    for col in ["rr07_rorresul", "br09_tillgsu"]:  # REMOVED rr01_ntoms_yoy_pct (r=1.0 with ny_omsf)
         new_features[f"{col}_yoy_pct"] = group[col].pct_change(fill_method=None)
     for col in ["rr01_ntoms", "br09_tillgsu"]:
         new_features[f"{col}_yoy_abs"] = group[col].diff()
@@ -345,6 +345,9 @@ def create_engineered_features(
         "dso_days_trend_3y": _rolling_slope(df["dso_days"], window=3),
         "inventory_days_trend_3y": _rolling_slope(df["inventory_days"], window=3),
         "dpo_days_trend_3y": _rolling_slope(df["dpo_days"], window=3),
+        "dso_days_yoy_diff": group["dso_days"].diff(),
+        "inventory_days_yoy_diff": group["inventory_days"].diff(),
+        "dpo_days_yoy_diff": group["dpo_days"].diff(),
         # Risk metrics (drawdown) - capture downside exposure
         "revenue_drawdown_5y": _rolling_drawdown(df["rr01_ntoms"], window=5),
         "equity_drawdown_5y": _rolling_drawdown(df["br10_eksu"], window=5),
@@ -379,7 +382,7 @@ def create_engineered_features(
     #         df["years_since_last_credit_event"].le(limit).fillna(False).astype("Int8")
     #     )
 
-    df["event_count_total"] = group["credit_event"].cumsum().astype("Int16")
+    # df["event_count_total"] = group["credit_event"].cumsum().astype("Int16")  # REMOVED: Replaced with event_count_last_5y to prevent overfitting
     df["event_count_last_5y"] = (
         group["credit_event"]
         .rolling(window=5, min_periods=1)
