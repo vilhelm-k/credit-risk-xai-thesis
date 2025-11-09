@@ -63,7 +63,7 @@ NY_COLS = [
     "ny_avkegkap",
     # "ny_rorkapo",  # REMOVED: Perfect correlation with ratio_nwc_sales (r≈1.0), more NaNs, slightly lower AUC
     "ny_kasslikv",
-    "ny_rormarg",
+    # "ny_rormarg",  # REMOVED: Redundant (multicollinearity with ny_nettomarg, r=0.979)
     "ny_nettomarg",
     # "ny_vinstprc", # REMOVED: Redundant with ny_nettomarg
     "ny_omspanst",
@@ -74,7 +74,7 @@ NY_COLS = [
 
 KEPT_RAW_COLS = [
     "rr01_ntoms",
-    "br09_tillgsu",
+    "br09_tillgsu",  # Kept for feature engineering but excluded from model features (see exclusion list below)
     "br10_eksu",
     "bslov_antanst",
     "br07b_kabasu",
@@ -82,6 +82,11 @@ KEPT_RAW_COLS = [
     # "br15_lsksu",  # REMOVED: Bottom 20% in both SHAP (0.0136) and tree importance (1297)
     "rr07_rorresul",
     "rr15_resar",
+]
+
+# Raw columns to exclude from modeling (kept for feature engineering but not used as model features)
+EXCLUDED_RAW_COLS = [
+    "br09_tillgsu",  # Redundant (multicollinearity with br10_eksu, r=0.904); br10_eksu provides similar signal
 ]
 
 RR_SOURCE_COLS = [
@@ -175,10 +180,10 @@ COLS_TO_LOAD = list(
 # -----------------------------------------------------------------------------
 
 RATIO_FEATURE_NAMES = [
-    "ratio_personnel_cost",
+    # "ratio_personnel_cost",  # REMOVED: Redundant (multicollinearity & low unique contribution)
     "ratio_depreciation_cost",
     # "ratio_other_operating_cost",  # REMOVED: Lowest individual impact (-0.000446 AUC), 3 red flags, SHAP=0.010
-    "ratio_financial_cost",
+    # "ratio_financial_cost",  # REMOVED: Redundant (multicollinearity & low unique contribution)
     # "ratio_ebitda_margin",  # REMOVED: Near-perfect correlation with ny_rormarg (r=0.998)
     "ratio_ebit_interest_cov",
     # "ratio_ebitda_interest_cov",  # REMOVED: Highly correlated with ratio_ebit_interest_cov (r=0.99)
@@ -190,15 +195,15 @@ RATIO_FEATURE_NAMES = [
     "ratio_retained_earnings_equity",
     # "ratio_share_capital_equity", # REMOVED: Low importance
     "ratio_dividend_payout",
-    "ratio_group_support",
-    "equity_to_sales",
+    # "ratio_group_support",  # REMOVED: Only relevant for subsidiaries/group companies; filtered to independent companies only
+    # "equity_to_sales",  # REMOVED: Redundant (multicollinearity & low unique contribution)
     "equity_to_profit",
     "assets_to_profit",
-    "ratio_intragroup_financing_share",
+    # "ratio_intragroup_financing_share",  # REMOVED: Only relevant for subsidiaries/group companies; filtered to independent companies only
 ]
 
 LIQUIDITY_EFFICIENCY_FEATURES = [
-    "dso_days",
+    # "dso_days",  # REMOVED: Redundant (multicollinearity with ratio_nwc_sales, r=-0.944)
     "inventory_days",
     "dpo_days",
     # "cash_conversion_cycle",  # REMOVED: High correlation with dso_days (r=0.971)
@@ -209,32 +214,32 @@ TREND_FEATURE_NAMES = [
     "rr01_ntoms_yoy_abs",
     "rr07_rorresul_yoy_pct",
     # "rr07_rorresul_yoy_abs", # REMOVED: Redundant
-    "br09_tillgsu_yoy_pct",
-    "br09_tillgsu_yoy_abs",
+    # "br09_tillgsu_yoy_pct",  # REMOVED: br09_tillgsu redundant with br10_eksu
+    # "br09_tillgsu_yoy_abs",  # REMOVED: br09_tillgsu redundant with br10_eksu
     "ny_solid_yoy_diff",
     "ny_skuldgrd_yoy_diff",
     "ratio_cash_liquidity_yoy_pct",
     "ratio_cash_liquidity_yoy_abs", # KEPT: As per user request
     "ratio_ebit_interest_cov_yoy_pct",
-    "dso_days_yoy_diff",
+    # "dso_days_yoy_diff",  # REMOVED: dso_days redundant with ratio_nwc_sales
     "inventory_days_yoy_diff",
     "dpo_days_yoy_diff",
 ]
 
 # Temporal features selected via 5×3 nested CV feature selection (Experiment 1-3)
 # See notebooks/03_feature_selection.ipynb for detailed analysis
-# Selection achieved 98.4% of full model performance with only 26.5% of temporal features
+# 6 features selected (dso_days and br09_tillgsu features removed due to redundancy)
 TEMPORAL_FEATURE_NAMES = [
     # Growth metrics (CAGR) - capture fundamental business momentum
     "revenue_cagr_3y",
-    "assets_cagr_3y",
+    # "assets_cagr_3y",  # REMOVED: br09_tillgsu (total assets) redundant with br10_eksu (equity)
     "equity_cagr_3y",
     "profit_cagr_3y",
     # Risk metrics (drawdown) - capture downside exposure
     "revenue_drawdown_5y",
     "equity_drawdown_5y",
     # Working capital trends - early warning signals for operational deterioration
-    "dso_days_trend_3y",
+    # "dso_days_trend_3y",  # REMOVED: dso_days redundant with ratio_nwc_sales
     "inventory_days_trend_3y",
     "dpo_days_trend_3y",
 ]
@@ -259,7 +264,7 @@ MACRO_FEATURE_NAMES = [
     # "interest_delta_short", # REMOVED: Redundant
     "term_spread",
     # "term_spread_delta", # REMOVED: Redundant
-    "inflation_yoy",
+    # "inflation_yoy",  # REMOVED: Near-zero variance (0.0002), low importance
     # "inflation_trailing_3y",  # REMOVED: Highly correlated with inflation_yoy (r=0.86)
     "unemp_rate",
     # "unemp_delta", # REMOVED: Redundant
@@ -387,9 +392,10 @@ BASE_MODEL_FEATURES = [
     "bransch_sni071_konv",
     "bransch_borsbransch_konv",
     "ser_laen",
-    "knc_kncfall",
+    # "knc_kncfall",  # REMOVED: Used as filter (knc_kncfall==1) rather than feature; model applies to independent companies only
 ]
 
-FEATURES_FOR_MODEL = list(
-    dict.fromkeys(BASE_MODEL_FEATURES + NY_COLS + KEPT_RAW_COLS + ENGINEERED_FEATURE_NAMES)
-)
+FEATURES_FOR_MODEL = [
+    f for f in list(dict.fromkeys(BASE_MODEL_FEATURES + NY_COLS + KEPT_RAW_COLS + ENGINEERED_FEATURE_NAMES))
+    if f not in EXCLUDED_RAW_COLS
+]

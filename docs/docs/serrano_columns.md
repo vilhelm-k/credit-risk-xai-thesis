@@ -38,7 +38,7 @@ Reference guide to the raw columns loaded from the Serrano database (Version 3
 | `ny_avkegkap` | Return on equity = Adjusted net result ÷ Adjusted equity. | Ratio / %. |
 | ~~`ny_rorkapo`~~ | ~~Working capital ÷ Net sales.~~ | **REMOVED**: Perfect correlation with engineered `ratio_nwc_sales` (r≈1.0), more NaNs (3665 vs 3525), slightly lower AUC. Replaced by `ratio_nwc_sales`. |
 | `ny_kasslikv` | Quick ratio = (Current assets – inventories) ÷ Current liabilities. | Ratio. |
-| `ny_rormarg` | Operating margin = Adjusted operating profit ÷ Net sales. | Ratio / %. KEPT: Ablation loss of 0.000405 exceeds threshold; captures distinct operating efficiency signal (17% unique variance vs net margin). |
+| ~~`ny_rormarg`~~ | ~~Operating margin = Adjusted operating profit ÷ Net sales.~~ | **REMOVED from model**: Redundant (multicollinearity with ny_nettomarg, r=0.979). |
 | `ny_nettomarg` | Net margin. | Ratio / %. |
 | `ny_vinstprc` | Profitability percentage (adjusted operating profit after financial income ÷ Net sales). | Ratio / %. |
 | `ny_omspanst` | Net sales per employee. | kSEK per employee. |
