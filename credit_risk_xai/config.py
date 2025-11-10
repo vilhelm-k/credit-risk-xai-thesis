@@ -73,22 +73,27 @@ NY_COLS = [
 ]
 
 KEPT_RAW_COLS = [
-    "rr01_ntoms",  # Kept for feature engineering but excluded from model features (see exclusion list below)
-    "br09_tillgsu",  # Kept for feature engineering but excluded from model features (see exclusion list below)
-    "br10_eksu",
-    "bslov_antanst",
-    "br07b_kabasu",
-    # "br13_ksksu",  # REMOVED: Bottom 20% in both SHAP (0.0096) and tree importance (1465)
-    # "br15_lsksu",  # REMOVED: Bottom 20% in both SHAP (0.0136) and tree importance (1297)
-    "rr07_rorresul",  # Kept for feature engineering but excluded from model features (see exclusion list below)
-    "rr15_resar",
+    "rr01_ntoms",     # For feature engineering only (excluded from model)
+    "br09_tillgsu",   # For feature engineering only (excluded from model)
+    "br10_eksu",      # For feature engineering only (excluded from model)
+    "bslov_antanst",  # For feature engineering only (excluded from model)
+    "br07b_kabasu",   # For feature engineering only (excluded from model)
+    "br08_omstgsu",   # For feature engineering only (needed for working capital, current ratio, OCF)
+    "rr07_rorresul",  # For feature engineering only (excluded from model)
+    "rr15_resar",     # For feature engineering only (excluded from model)
 ]
 
 # Raw columns to exclude from modeling (kept for feature engineering but not used as model features)
+# All nominal values should be log-transformed; raw versions are excluded
 EXCLUDED_RAW_COLS = [
-    "br09_tillgsu",  # Redundant (multicollinearity with br10_eksu, r=0.904); br10_eksu provides similar signal
-    "rr01_ntoms",  # Size controlled by bslov_antanst + br10_eksu; scale information captured by derivatives (revenue_cagr_3y, revenue_drawdown_5y, rr01_ntoms_yoy_abs)
-    "rr07_rorresul",  # Redundant with profitability ratios (ny_nettomarg, ny_avkegkap); information captured by rr07_rorresul_yoy_pct
+    "rr01_ntoms",     # Replaced by log_rr01_ntoms
+    "br09_tillgsu",   # Replaced by log_br09_tillgsu
+    "br10_eksu",      # Replaced by log_br10_eksu
+    "bslov_antanst",  # Replaced by log_bslov_antanst
+    "br07b_kabasu",   # Replaced by log_br07b_kabasu
+    "br08_omstgsu",   # Not needed as feature (used only for calculations)
+    "rr07_rorresul",  # Replaced by log_rr07_rorresul
+    "rr15_resar",     # Replaced by log_rr15_resar
 ]
 
 RR_SOURCE_COLS = [
@@ -243,8 +248,11 @@ TEMPORAL_FEATURE_NAMES = [
 
 # Operating cash flow metrics
 OCF_FEATURE_NAMES = [
-    "ocf_proxy",             # EBIT + Depreciation - ΔWorking Capital
-    "ratio_ocf_to_debt",     # OCF relative to total debt
+    "ocf_proxy",                      # EBIT + Depreciation - ΔWorking Capital
+    "ratio_ocf_to_debt",              # OCF relative to total debt
+    "ocf_proxy_yoy_pct",              # YoY % change in OCF proxy
+    "ratio_ocf_to_debt_yoy_diff",     # YoY change in OCF-to-debt ratio
+    "ocf_proxy_trend_3y",             # 3-year trend (slope) of OCF proxy
 ]
 
 # Altman Z-Score components

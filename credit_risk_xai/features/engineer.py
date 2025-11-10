@@ -427,13 +427,21 @@ def create_engineered_features(
     df = df.join(pd.DataFrame(new_features, index=df.index))
     new_features.clear()
 
-    # Recreate groupby for YoY calculations on new features
+    # Recreate groupby for YoY and trend calculations on new features
     group = df.groupby(level=0, group_keys=False)
 
-    # Compute YoY change for net_debt_to_ebitda
-    new_features["net_debt_to_ebitda_yoy_diff"] = group["net_debt_to_ebitda"].diff()
+    logger.info("Computing YoY changes and trends for OCF and leverage metrics")
+    new_features.update({
+        # Leverage YoY
+        "net_debt_to_ebitda_yoy_diff": group["net_debt_to_ebitda"].diff(),
+        # OCF YoY changes
+        "ocf_proxy_yoy_pct": group["ocf_proxy"].pct_change(fill_method=None),
+        "ratio_ocf_to_debt_yoy_diff": group["ratio_ocf_to_debt"].diff(),
+        # OCF 3-year trend
+        "ocf_proxy_trend_3y": _rolling_slope(df["ocf_proxy"], window=3),
+    })
 
-    # Join YoY features
+    # Join YoY and trend features
     df = df.join(pd.DataFrame(new_features, index=df.index))
     new_features.clear()
 

@@ -14,14 +14,16 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 - `ratio_ebit_interest_cov` → Low SHAP (0.021), captured by `ny_rs`
 
 **Features Added** (literature-based enhancements):
-- **Log-transformed nominal values** (7 features): Size proxies using log scale to reduce skewness
+- **Log-transformed nominal values** (7 features): All raw nominal values replaced with log versions
 - **DSO restored** (2 features): `dso_days` + `dso_days_yoy_diff` - completes working capital trinity per literature
-- **OCF metrics** (2 features): Operating cash flow proxy and OCF-to-debt ratio
+- **OCF metrics** (5 features): Operating cash flow proxy with comprehensive trend analysis
 - **Altman Z-Score components** (2 features): Working capital/assets, retained earnings/assets
 - **Leverage metrics** (3 features): Financial mismatch, net debt to EBITDA + YoY trend
 - **Current ratio** (2 features): Standard liquidity metric + YoY trend
 
-**Net Change**: +11 features (removed 4, added 15)
+**Net Change**: +14 features (removed 4, added 18)
+
+**Key Implementation Detail**: All raw nominal values (revenue, assets, equity, cash, employees, profit) are now **excluded from the model** and replaced with log-transformed versions to reduce skewness and align with academic literature. Raw values are kept only for feature engineering calculations.
 
 **Previous Pruning Context**: Following earlier iterative pruning, 50+ features were removed based on correlations, near-zero variance, and low ablation impact (see git history for details)
 
@@ -169,14 +171,17 @@ The following temporal feature types were systematically excluded after testing:
 
 ## Operating Cash Flow (OCF) Features
 
-**NEW**: Based on academic literature emphasizing cash flow over accounting profit, OCF proxy features have been added.
+**NEW**: Based on academic literature emphasizing cash flow over accounting profit, OCF proxy features have been added with comprehensive trend analysis.
 
 | Feature | Definition | Purpose |
 | --- | --- | --- |
 | `ocf_proxy` | `(rr07_rorresul + rr05_avskriv) - ΔWorking Capital` | **ADDED**: Operating cash flow proxy. EBIT + Depreciation minus change in working capital. Captures cash generation vs. accounting profit. |
 | `ratio_ocf_to_debt` | `ocf_proxy / (br13_ksksu + br15_lsksu)` | **ADDED**: OCF relative to total debt. Key solvency metric - measures debt service capacity from operations. |
+| `ocf_proxy_yoy_pct` | YoY % change in `ocf_proxy` | **ADDED**: Cash flow momentum. Deteriorating OCF signals operational stress. |
+| `ratio_ocf_to_debt_yoy_diff` | YoY change in `ratio_ocf_to_debt` | **ADDED**: Trajectory of debt service capacity from operations. |
+| `ocf_proxy_trend_3y` | 3-year linear slope of `ocf_proxy` | **ADDED**: Multi-year cash flow trajectory. Sustained decline indicates structural deterioration. |
 
-**Rationale**: Accounting profit can be manipulated via accruals; cash flow is harder to game. OCF-to-debt ratio is standard in leveraged finance and credit analysis.
+**Rationale**: Accounting profit can be manipulated via accruals; cash flow is harder to game. OCF-to-debt ratio is standard in leveraged finance and credit analysis. Trends capture deteriorating vs. improving cash generation dynamics.
 
 ## Altman Z-Score Components
 
