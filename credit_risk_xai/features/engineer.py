@@ -300,19 +300,28 @@ def create_engineered_features(
         "ratio_retained_earnings_equity": _safe_div(
             df["br10e_balres"], df["br10_eksu"]
         ),
-        # "ratio_share_capital_equity": _safe_div(
-        #     df["br10a_aktiekap"], df["br10_eksu"]
-        # ), # REMOVED: Low importance
-        # "equity_to_sales": _safe_div(df["br10_eksu"], df["rr01_ntoms"]),  # REMOVED: Redundant (multicollinearity & low unique contribution)
-        # "equity_to_profit": _safe_div(df["br10_eksu"], df["rr15_resar"]),  # REMOVED: Redundant with ROE, unstable denominator
-        # "assets_to_profit": _safe_div(df["br09_tillgsu"], df["rr15_resar"]),  # REMOVED: Redundant with ROA, unstable denominator
-        # "ratio_dividend_payout": _safe_div(  # REMOVED: Unstable when profit ≤ 0
-        #     df["rr00_utdbel"], df["rr15_resar"]
-        # ),
-        "dividend_yield": _safe_div(df["rr00_utdbel"], df["br10_eksu"]),  # ADDED: Stable alternative using equity
-        # "ratio_group_support": _safe_div(  # REMOVED: Only relevant for subsidiaries/group companies
-        #     df["br10f_kncbdrel"] + df["br10g_agtskel"], df["rr01_ntoms"]
-        # ),
+        "dividend_yield": _safe_div(df["rr00_utdbel"], df["br10_eksu"]),
+    })
+
+    logger.info("Computing OCF proxy and related ratios (BEFORE dropping BR columns)")
+    # Compute these BEFORE dropping BR columns to avoid KeyErrors
+    working_capital = df["br08_omstgsu"] - df["br13_ksksu"]
+    net_debt = total_debt - df["br07_kplackaba"]
+
+    new_features.update({
+        # OCF features
+        "ocf_proxy": ebitda - working_capital.groupby(level=0).diff(),
+        "ratio_ocf_to_debt": _safe_div(
+            ebitda - working_capital.groupby(level=0).diff(), total_debt
+        ),
+        # Altman Z-Score components
+        "working_capital_to_assets": _safe_div(working_capital, df["br09_tillgsu"]),
+        "retained_earnings_to_assets": _safe_div(df["br10e_balres"], df["br09_tillgsu"]),
+        # Leverage & financial mismatch
+        "financial_mismatch": _safe_div(
+            df["br13_ksksu"] - df["br08_omstgsu"], df["br09_tillgsu"]
+        ),
+        "net_debt_to_ebitda": _safe_div(net_debt, ebitda),
     })
 
     # Join basic ratios early so they can be used in trend calculations
@@ -320,12 +329,12 @@ def create_engineered_features(
     new_features.clear()  # Clear to prepare for next batch
 
     # Drop ALL rr_* and br_* columns except KEPT_RAW_COLS to save memory
-    # KEPT_RAW_COLS = rr01_ntoms, br09_tillgsu, br10_eksu, bslov_antanst,
-    #                 br07b_kabasu, br13_ksksu, br15_lsksu, rr07_rorresul, rr15_resar
+    # All features requiring BR/RR columns have been computed above (including OCF, Altman, leverage)
+    # KEPT_RAW_COLS only contains nominal values needed for log transform + YoY/trend calculations
     cols_to_drop = [col for col in (RR_SOURCE_COLS + BR_SOURCE_COLS) if col in df.columns and col not in KEPT_RAW_COLS]
     df.drop(columns=cols_to_drop, inplace=True)
     gc.collect()  # Force garbage collection to free memory immediately
-    logger.debug("Dropped {} raw rr/br columns after computing basic ratios (kept only KEPT_RAW_COLS)", len(cols_to_drop))
+    logger.debug("Dropped {} raw rr/br columns after computing all ratio features (kept only KEPT_RAW_COLS)", len(cols_to_drop))
 
     # Recreate groupby after joining new features
     group = df.groupby(level=0, group_keys=False)
@@ -394,40 +403,7 @@ def create_engineered_features(
     df = df.join(pd.DataFrame(new_features, index=df.index))
     new_features.clear()
 
-    logger.info("Computing OCF proxy and related ratios")
-    # OCF proxy = EBIT + Depreciation - Change in Working Capital
-    # Note: ebitda was computed earlier (rr07_rorresul + rr05_avskriv)
-    working_capital = df["br08_omstgsu"] - df["br13_ksksu"]
-    wc_change = working_capital.groupby(level=0).diff()
-    ocf_proxy = ebitda - wc_change  # ebitda already includes EBIT + Depreciation
-
-    new_features.update({
-        "ocf_proxy": ocf_proxy,
-        "ratio_ocf_to_debt": _safe_div(ocf_proxy, total_debt),
-    })
-
-    logger.info("Computing Altman Z-Score components")
-    new_features.update({
-        "working_capital_to_assets": _safe_div(working_capital, df["br09_tillgsu"]),
-        "retained_earnings_to_assets": _safe_div(df["br10e_balres"], df["br09_tillgsu"]),
-    })
-
-    logger.info("Computing leverage and financial mismatch ratios")
-    net_debt = total_debt - df["br07_kplackaba"]  # Total debt minus liquid assets
-    net_debt_to_ebitda = _safe_div(net_debt, ebitda)
-
-    new_features.update({
-        "financial_mismatch": _safe_div(
-            df["br13_ksksu"] - df["br08_omstgsu"], df["br09_tillgsu"]
-        ),
-        "net_debt_to_ebitda": net_debt_to_ebitda,
-    })
-
-    # Join OCF, Altman, and leverage features
-    df = df.join(pd.DataFrame(new_features, index=df.index))
-    new_features.clear()
-
-    # Recreate groupby for YoY and trend calculations on new features
+    # Recreate groupby for YoY and trend calculations on OCF/leverage features
     group = df.groupby(level=0, group_keys=False)
 
     logger.info("Computing YoY changes and trends for OCF and leverage metrics")
@@ -506,8 +482,9 @@ def create_engineered_features(
     # Note: This is the OLS slope coefficient from regressing revenue growth on GDP growth
 
     logger.info("Calculating rolling revenue beta (streaming sums)")
+    # Use ny_omsf (revenue growth) instead of rr01_ntoms_yoy_pct (r=1.0, identical)
     df["revenue_beta_gdp_5y"] = _rolling_beta(
-        df["rr01_ntoms_yoy_pct"],
+        df["ny_omsf"],
         df["gdp_growth"],
         window=5,
         min_periods=4,

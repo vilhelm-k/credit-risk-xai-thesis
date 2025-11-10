@@ -73,27 +73,25 @@ NY_COLS = [
 ]
 
 KEPT_RAW_COLS = [
-    "rr01_ntoms",     # For feature engineering only (excluded from model)
-    "br09_tillgsu",   # For feature engineering only (excluded from model)
-    "br10_eksu",      # For feature engineering only (excluded from model)
-    "bslov_antanst",  # For feature engineering only (excluded from model)
-    "br07b_kabasu",   # For feature engineering only (excluded from model)
-    "br08_omstgsu",   # For feature engineering only (needed for working capital, current ratio, OCF)
-    "rr07_rorresul",  # For feature engineering only (excluded from model)
-    "rr15_resar",     # For feature engineering only (excluded from model)
+    "rr01_ntoms",      # For feature engineering only (excluded from model)
+    "br09_tillgsu",    # For feature engineering only (excluded from model)
+    "br10_eksu",       # For feature engineering only (excluded from model)
+    "bslov_antanst",   # For feature engineering only (excluded from model)
+    "br07b_kabasu",    # For feature engineering only (excluded from model)
+    "rr07_rorresul",   # For feature engineering only (excluded from model)
+    "rr15_resar",      # For feature engineering only (excluded from model)
 ]
 
 # Raw columns to exclude from modeling (kept for feature engineering but not used as model features)
 # All nominal values should be log-transformed; raw versions are excluded
 EXCLUDED_RAW_COLS = [
-    "rr01_ntoms",     # Replaced by log_rr01_ntoms
-    "br09_tillgsu",   # Replaced by log_br09_tillgsu
-    "br10_eksu",      # Replaced by log_br10_eksu
-    "bslov_antanst",  # Replaced by log_bslov_antanst
-    "br07b_kabasu",   # Replaced by log_br07b_kabasu
-    "br08_omstgsu",   # Not needed as feature (used only for calculations)
-    "rr07_rorresul",  # Replaced by log_rr07_rorresul
-    "rr15_resar",     # Replaced by log_rr15_resar
+    "rr01_ntoms",      # Replaced by log_rr01_ntoms
+    "br09_tillgsu",    # Replaced by log_br09_tillgsu
+    "br10_eksu",       # Replaced by log_br10_eksu
+    "bslov_antanst",   # Replaced by log_bslov_antanst
+    "br07b_kabasu",    # Replaced by log_br07b_kabasu
+    "rr07_rorresul",   # Replaced by log_rr07_rorresul
+    "rr15_resar",      # Replaced by log_rr15_resar
 ]
 
 RR_SOURCE_COLS = [
