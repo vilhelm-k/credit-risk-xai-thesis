@@ -4,11 +4,15 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 
 **Model Scope**: This credit risk model applies to **independent companies only** (filtered to `knc_kncfall==1`). Subsidiaries, parent companies, and other organizational structures are excluded because they exhibit fundamentally different risk profiles due to intragroup financing, parent support mechanisms, and consolidated financial statements. This filtering ensures that financial ratios have consistent interpretation across all companies in the dataset.
 
-**Note**: Following an iterative process of correlation analysis and feature importance evaluation, a total of 48 redundant or low-importance features have been removed to improve model efficiency while maintaining predictive performance. This includes:
+**Base Features**: The model includes firm characteristics (`bslov_antanst`, `company_age`), industry controls (`bransch_sni071_konv`, `bransch_borsbransch_konv`), and macroeconomic conditions (`gdp_growth`, `interest_avg_short`, `term_spread`). Geographic controls (`ser_laen` - county code) and organizational structure (`knc_kncfall`) were excluded: the former due to low predictive value, the latter because it's used as a data filter rather than a feature.
+
+**Note**: Following an iterative process of correlation analysis and feature importance evaluation, a total of 54 redundant or low-importance features have been removed to improve model efficiency while maintaining predictive performance. This includes:
 - **Phase 1 pruning**: 36 features removed based on perfect correlations, near-zero variance, and low ablation impact
 - **Phase 2 pruning** (validated via 5-fold CV): 7 additional features removed based on multicollinearity analysis (correlation threshold |r| > 0.85) including: `ratio_personnel_cost`, `ratio_financial_cost`, `equity_to_sales`, `dso_days` (and derivatives), `br09_tillgsu` (and derivatives), `ny_rormarg`, and `inflation_yoy`
 - **Group-structure features**: 2 features (`ratio_group_support`, `ratio_intragroup_financing_share`) removed as they are only relevant for subsidiaries/parent companies
 - **Organizational filter**: 1 feature (`knc_kncfall`) moved from model feature to data filter
+- **Data leakage prevention**: 1 feature (`years_since_last_credit_event`) removed as it may not be available at prediction time for independent companies
+- **Low-importance features**: 5 features removed based on empirical importance analysis: `ser_laen` (geographic control), `unemp_rate` (redundant macro control), `rr07_rorresul` (redundant with profitability ratios), `inventory_days` (captured by derivatives), `rr01_ntoms` (size captured by employee count and equity)
 
 ## Cost Structure & Profitability Ratios
 
@@ -31,7 +35,7 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 | --- | --- | --- |
 | `ratio_cash_liquidity` | `(br07b_kabasu + br07a_kplacsu) / br13_ksksu` | Quick ratio (cash & near cash vs. current liabilities). |
 | ~~`dso_days`~~ | ~~`(br06g_kfordsu / rr01_ntoms) * 365`~~ | **REMOVED**: Redundant (multicollinearity with ratio_nwc_sales, r=-0.944). |
-| `inventory_days` | `(br06c_lagersu / rr06a_prodkos) * 365` | Days inventory on hand. |
+| ~~`inventory_days`~~ | ~~`(br06c_lagersu / rr06a_prodkos) * 365`~~ | **REMOVED**: Low importance; information captured by derivatives (inventory_days_yoy_diff, inventory_days_trend_3y). |
 | `dpo_days` | `(br13a_ksklev / rr06a_prodkos) * 365` | Days payables outstanding; supplier payment terms. |
 | ~~`cash_conversion_cycle`~~ | ~~`dso_days + inventory_days - dpo_days`~~ | **REMOVED**: High correlation with `dso_days` (r=0.971). |
 | `ratio_nwc_sales` | `(br06_lagerkford + br07_kplackaba - br13_ksksu) / rr01_ntoms` | Net working capital relative to sales. |
@@ -46,6 +50,18 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 | ~~`equity_to_sales`~~ | ~~`br10_eksu / rr01_ntoms`~~ | **REMOVED**: Redundant (multicollinearity & low unique contribution after pruning). |
 | `equity_to_profit`| `br10_eksu / rr15_resar` | Equity base relative to net profit generation. |
 | `assets_to_profit`| `br09_tillgsu / rr15_resar` | Asset base relative to net profit generation. |
+
+## Removed Raw Financial Statement Values
+
+The following raw financial statement values are excluded from the model despite being used in feature engineering:
+
+| Feature | Definition | Removal Rationale |
+| --- | --- | --- |
+| ~~`rr01_ntoms`~~ | Net revenue (total sales) in kSEK | **REMOVED**: Firm size controlled by `bslov_antanst` (employees) and `br10_eksu` (equity); revenue scale information captured by derivatives (`revenue_cagr_3y`, `revenue_drawdown_5y`, `rr01_ntoms_yoy_abs`). Raw revenue magnitude adds no incremental predictive value after controlling for ratios and growth. |
+| ~~`br09_tillgsu`~~ | Total assets in kSEK | **REMOVED**: High correlation with `br10_eksu` (r=0.904); balance sheet size sufficiently represented by equity. Avoiding multicollinearity. |
+| ~~`rr07_rorresul`~~ | Operating profit/loss in kSEK | **REMOVED**: Redundant with profitability ratios (`ny_nettomarg`, `ny_avkegkap`); profit dynamics captured by `rr07_rorresul_yoy_pct`. Raw absolute profit less informative than margins and growth rates. |
+
+**Rationale for excluding raw values**: After controlling for firm size (employees, equity), efficiency ratios (margins, turnover), and temporal dynamics (growth, trends), the absolute magnitude of financial statement line items provides minimal incremental information. Modern credit risk models prioritize **relative performance** (ratios) and **change dynamics** (trends, growth) over absolute scale.
 
 ## YoY Change & Trend Features
 
@@ -122,7 +138,7 @@ The following temporal feature types were systematically excluded after testing:
 
 | Feature | Definition / Purpose |
 | --- | --- |
-| `years_since_last_credit_event` | Years elapsed since the previous bankruptcy/reorganisation (NaN for first-time). |
+| ~~`years_since_last_credit_event`~~ | **REMOVED**: Potential data leakage - backward-looking feature that may reflect information not available at prediction time for independent companies. |
 | ~~`event_count_total`~~ | **REMOVED**: Replaced with `event_count_last_5y` to prevent overfitting to rare historical events (only 0.16% of companies have events older than 5 years). |
 | `event_count_last_5y` | Credit events within the past 5 years. Preferred over total count to avoid data leakage from sparse historical events. |
 
@@ -130,11 +146,11 @@ The following temporal feature types were systematically excluded after testing:
 
 | Feature | Definition |
 | --- | --- |
-| `gdp_growth` | Annual GDP growth (market prices). |
-| `interest_avg_short` | Annual average of short-term corporate borrowing rates (≤3m). |
+| `gdp_growth` | Annual GDP growth (market prices). **KEPT**: Core macroeconomic control despite low importance - provides theoretical completeness. |
+| `interest_avg_short` | Annual average of short-term corporate borrowing rates (≤3m). **KEPT**: Core macroeconomic control despite low importance - provides theoretical completeness. |
 | `term_spread` | Long – short rate spread. |
 | ~~`inflation_yoy`~~ | ~~YoY CPI change (based on annual average KPIF).~~ **REMOVED**: Near-zero variance (0.0002) and low predictive value after pruning. |
-| `unemp_rate` | National unemployment level. |
+| ~~`unemp_rate`~~ | ~~National unemployment level.~~ **REMOVED**: Low importance; macroeconomic conditions sufficiently captured by gdp_growth and interest_avg_short. |
 | `revenue_beta_gdp_5y` | Rolling 5-year beta (cyclicality) of revenue growth vs. GDP growth. |
 
 ---

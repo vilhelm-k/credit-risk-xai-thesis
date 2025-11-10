@@ -73,20 +73,22 @@ NY_COLS = [
 ]
 
 KEPT_RAW_COLS = [
-    "rr01_ntoms",
+    "rr01_ntoms",  # Kept for feature engineering but excluded from model features (see exclusion list below)
     "br09_tillgsu",  # Kept for feature engineering but excluded from model features (see exclusion list below)
     "br10_eksu",
     "bslov_antanst",
     "br07b_kabasu",
     # "br13_ksksu",  # REMOVED: Bottom 20% in both SHAP (0.0096) and tree importance (1465)
     # "br15_lsksu",  # REMOVED: Bottom 20% in both SHAP (0.0136) and tree importance (1297)
-    "rr07_rorresul",
+    "rr07_rorresul",  # Kept for feature engineering but excluded from model features (see exclusion list below)
     "rr15_resar",
 ]
 
 # Raw columns to exclude from modeling (kept for feature engineering but not used as model features)
 EXCLUDED_RAW_COLS = [
     "br09_tillgsu",  # Redundant (multicollinearity with br10_eksu, r=0.904); br10_eksu provides similar signal
+    "rr01_ntoms",  # Size controlled by bslov_antanst + br10_eksu; scale information captured by derivatives (revenue_cagr_3y, revenue_drawdown_5y, rr01_ntoms_yoy_abs)
+    "rr07_rorresul",  # Redundant with profitability ratios (ny_nettomarg, ny_avkegkap); information captured by rr07_rorresul_yoy_pct
 ]
 
 RR_SOURCE_COLS = [
@@ -204,7 +206,7 @@ RATIO_FEATURE_NAMES = [
 
 LIQUIDITY_EFFICIENCY_FEATURES = [
     # "dso_days",  # REMOVED: Redundant (multicollinearity with ratio_nwc_sales, r=-0.944)
-    "inventory_days",
+    # "inventory_days",  # REMOVED: Low importance; information captured by derivatives (inventory_days_yoy_diff, inventory_days_trend_3y)
     "dpo_days",
     # "cash_conversion_cycle",  # REMOVED: High correlation with dso_days (r=0.971)
 ]
@@ -245,7 +247,7 @@ TEMPORAL_FEATURE_NAMES = [
 ]
 
 CRISIS_FEATURE_NAMES = [
-    "years_since_last_credit_event",
+    # "years_since_last_credit_event",  # REMOVED: Potential data leakage - backward-looking feature that may reflect information not available at prediction time
     # "last_event_within_1y",  # REMOVED: Redundant with years_since_last_credit_event
     # "last_event_within_2y",  # REMOVED: Redundant with years_since_last_credit_event
     # "last_event_within_3y",  # REMOVED: Redundant with years_since_last_credit_event
@@ -256,9 +258,9 @@ CRISIS_FEATURE_NAMES = [
 ]
 
 MACRO_FEATURE_NAMES = [
-    "gdp_growth",
+    "gdp_growth",  # KEPT: Core macroeconomic control despite low importance
     # "gdp_growth_3y_avg", # REMOVED: Redundant
-    "interest_avg_short",
+    "interest_avg_short",  # KEPT: Core macroeconomic control despite low importance
     # "interest_avg_medium",  # REMOVED: Highly correlated with short and long rates (r>0.95)
     # "interest_avg_long",  # REMOVED: Highly correlated with short rate (r=0.88)
     # "interest_delta_short", # REMOVED: Redundant
@@ -266,7 +268,7 @@ MACRO_FEATURE_NAMES = [
     # "term_spread_delta", # REMOVED: Redundant
     # "inflation_yoy",  # REMOVED: Near-zero variance (0.0002), low importance
     # "inflation_trailing_3y",  # REMOVED: Highly correlated with inflation_yoy (r=0.86)
-    "unemp_rate",
+    # "unemp_rate",  # REMOVED: Low importance; macro conditions captured by gdp_growth and interest_avg_short
     # "unemp_delta", # REMOVED: Redundant
     # "real_revenue_growth", # REMOVED: Redundant
     # "revenue_vs_gdp",  # REMOVED: Nearly identical to real_revenue_growth (r=0.999996)
@@ -391,7 +393,7 @@ BASE_MODEL_FEATURES = [
     # "ser_stklf", # REMOVED: Duplicative with bslov_antanst
     "bransch_sni071_konv",
     "bransch_borsbransch_konv",
-    "ser_laen",
+    # "ser_laen",  # REMOVED: Geographic control with low predictive value
     # "knc_kncfall",  # REMOVED: Used as filter (knc_kncfall==1) rather than feature; model applies to independent companies only
 ]
 

@@ -365,11 +365,12 @@ def create_engineered_features(
     df = df.join(pd.DataFrame(new_features, index=df.index))
     new_features.clear()
 
-    credit_events = df["credit_event"] == 1
-    event_years = df["ser_year"].where(credit_events)
-    last_event_year = event_years.groupby(level=0).ffill()
-    df["years_since_last_credit_event"] = df["ser_year"] - last_event_year
-    df.loc[last_event_year.isna(), "years_since_last_credit_event"] = np.nan
+    # REMOVED: years_since_last_credit_event - potential data leakage
+    # credit_events = df["credit_event"] == 1
+    # event_years = df["ser_year"].where(credit_events)
+    # last_event_year = event_years.groupby(level=0).ffill()
+    # df["years_since_last_credit_event"] = df["ser_year"] - last_event_year
+    # df.loc[last_event_year.isna(), "years_since_last_credit_event"] = np.nan
 
     # REMOVED: Redundant binary flags - years_since_last_credit_event is sufficient
     # horizons = {
