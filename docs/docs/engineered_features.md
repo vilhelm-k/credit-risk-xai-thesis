@@ -6,13 +6,40 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 
 **Base Features**: The model includes firm characteristics (`bslov_antanst`, `company_age`), industry controls (`bransch_sni071_konv`, `bransch_borsbransch_konv`), and macroeconomic conditions (`gdp_growth`, `interest_avg_short`, `term_spread`). Geographic controls (`ser_laen` - county code) and organizational structure (`knc_kncfall`) were excluded: the former due to low predictive value, the latter because it's used as a data filter rather than a feature.
 
-**Note**: Following an iterative process of correlation analysis and feature importance evaluation, a total of 54 redundant or low-importance features have been removed to improve model efficiency while maintaining predictive performance. This includes:
-- **Phase 1 pruning**: 36 features removed based on perfect correlations, near-zero variance, and low ablation impact
-- **Phase 2 pruning** (validated via 5-fold CV): 7 additional features removed based on multicollinearity analysis (correlation threshold |r| > 0.85) including: `ratio_personnel_cost`, `ratio_financial_cost`, `equity_to_sales`, `dso_days` (and derivatives), `br09_tillgsu` (and derivatives), `ny_rormarg`, and `inflation_yoy`
-- **Group-structure features**: 2 features (`ratio_group_support`, `ratio_intragroup_financing_share`) removed as they are only relevant for subsidiaries/parent companies
-- **Organizational filter**: 1 feature (`knc_kncfall`) moved from model feature to data filter
-- **Data leakage prevention**: 1 feature (`years_since_last_credit_event`) removed as it may not be available at prediction time for independent companies
-- **Low-importance features**: 5 features removed based on empirical importance analysis: `ser_laen` (geographic control), `unemp_rate` (redundant macro control), `rr07_rorresul` (redundant with profitability ratios), `inventory_days` (captured by derivatives), `rr01_ntoms` (size captured by employee count and equity)
+**Recent Update (Refactoring 2025)**: Based on comprehensive model analysis and academic literature review (Altman Z-Score, Italian bankruptcy prediction studies), the feature set has been substantially revised:
+
+**Features Removed** (stability & redundancy):
+- `ratio_dividend_payout` → Replaced with `dividend_yield` (unstable denominator: profit can be ≤ 0)
+- `equity_to_profit`, `assets_to_profit` → Redundant with ROE/ROA; unstable denominators
+- `ratio_ebit_interest_cov` → Low SHAP (0.021), captured by `ny_rs`
+
+**Features Added** (literature-based enhancements):
+- **Log-transformed nominal values** (7 features): Size proxies using log scale to reduce skewness
+- **DSO restored** (2 features): `dso_days` + `dso_days_yoy_diff` - completes working capital trinity per literature
+- **OCF metrics** (2 features): Operating cash flow proxy and OCF-to-debt ratio
+- **Altman Z-Score components** (2 features): Working capital/assets, retained earnings/assets
+- **Leverage metrics** (3 features): Financial mismatch, net debt to EBITDA + YoY trend
+- **Current ratio** (2 features): Standard liquidity metric + YoY trend
+
+**Net Change**: +11 features (removed 4, added 15)
+
+**Previous Pruning Context**: Following earlier iterative pruning, 50+ features were removed based on correlations, near-zero variance, and low ablation impact (see git history for details)
+
+## Log-Transformed Nominal Features
+
+To address skewness in absolute financial values and align with academic literature (Italian bankruptcy models commonly use log(total assets)), all nominal values are log-transformed using `log1p()` (robust to zeros). Negative values return NaN (not economically meaningful for balance sheet items).
+
+| Feature | Source Column | Purpose |
+| --- | --- | --- |
+| `log_rr01_ntoms` | Net revenue (kSEK) | **ADDED**: Size proxy; reduces revenue skewness. Matches Italian paper approach. |
+| `log_br09_tillgsu` | Total assets (kSEK) | **ADDED**: Standard in academic literature (Altman, Italian models); scale-invariant size proxy. |
+| `log_br10_eksu` | Total equity (kSEK) | **ADDED**: Capital base measurement; complements equity ratios. |
+| `log_br07b_kabasu` | Cash and bank (kSEK) | **ADDED**: Liquidity buffer; absolute cash matters for small firms. |
+| `log_bslov_antanst` | Number of employees | **ADDED**: Alternative size proxy; less volatile than revenue. |
+| `log_rr07_rorresul` | Operating profit (kSEK) | **ADDED**: Profitability scale (NaN for negative values). |
+| `log_rr15_resar` | Net profit (kSEK) | **ADDED**: Bottom-line profitability scale (NaN for negative values). |
+
+**Rationale**: While ratios capture relative performance, absolute levels matter for SMEs where scale effects are pronounced. Log transformation reduces skewness and provides scale-invariant features that complement ratio-based metrics.
 
 ## Cost Structure & Profitability Ratios
 
@@ -23,9 +50,10 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 | ~~`ratio_other_operating_cost`~~ | ~~`rr06_rorkoov / rr01_ntoms`~~ | **REMOVED**: Lowest ablation impact (-0.000446), 3 red flags, SHAP=0.010. Captured by other profitability metrics. |
 | ~~`ratio_financial_cost`~~ | ~~`rr09_finkostn / rr01_ntoms`~~ | **REMOVED**: Redundant (multicollinearity & low unique contribution after pruning). |
 | ~~`ratio_ebitda_margin`~~ | ~~`(rr07_rorresul + rr05_avskriv) / rr01_ntoms`~~ | **REMOVED**: Near-perfect correlation with `ny_rormarg` (r=0.998). |
-| `ratio_ebit_interest_cov` | `rr07_rorresul / (rr09_finkostn - rr09d_jfrstfin)` | Interest coverage based on EBIT. |
+| ~~`ratio_ebit_interest_cov`~~ | ~~`rr07_rorresul / (rr09_finkostn - rr09d_jfrstfin)`~~ | **REMOVED**: Low SHAP (0.021), signal captured by `ny_rs` (interest coverage already in Nyckeltal). |
 | `ratio_cash_interest_cov` | `br07b_kabasu / (rr09_finkostn - rr09d_jfrstfin)` | Cash-on-hand relative to annual financial costs. |
-| `ratio_dividend_payout` | `rr00_utdbel / rr15_resar` | Dividend share of current-year profit (signals cash distribution). |
+| ~~`ratio_dividend_payout`~~ | ~~`rr00_utdbel / rr15_resar`~~ | **REMOVED**: Unstable denominator (profit can be ≤ 0); replaced with `dividend_yield`. |
+| `dividend_yield` | `rr00_utdbel / br10_eksu` | **ADDED**: Stable alternative to dividend payout using equity as denominator. |
 | ~~`ratio_group_support`~~ | ~~`(br10f_kncbdrel + br10g_agtskel) / rr01_ntoms`~~ | **REMOVED**: Only relevant for subsidiaries/group companies. Model applies to independent companies (knc_kncfall==1) only. |
 | ~~`ratio_intragroup_financing_share`~~ | ~~`(rr08a_rteinknc + rr09a_rtekoknc) / (rr08_finintk + rr09_finkostn)`~~ | **REMOVED**: Only relevant for subsidiaries/group companies. Model applies to independent companies (knc_kncfall==1) only. |
 
@@ -34,9 +62,10 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 | Feature | Definition / Formula | Purpose |
 | --- | --- | --- |
 | `ratio_cash_liquidity` | `(br07b_kabasu + br07a_kplacsu) / br13_ksksu` | Quick ratio (cash & near cash vs. current liabilities). |
-| ~~`dso_days`~~ | ~~`(br06g_kfordsu / rr01_ntoms) * 365`~~ | **REMOVED**: Redundant (multicollinearity with ratio_nwc_sales, r=-0.944). |
+| `dso_days` | `(br06g_kfordsu / rr01_ntoms) * 365` | **ADDED BACK**: Days sales outstanding; completes working capital trinity (DSO + inventory + DPO) per academic literature. |
 | ~~`inventory_days`~~ | ~~`(br06c_lagersu / rr06a_prodkos) * 365`~~ | **REMOVED**: Low importance; information captured by derivatives (inventory_days_yoy_diff, inventory_days_trend_3y). |
 | `dpo_days` | `(br13a_ksklev / rr06a_prodkos) * 365` | Days payables outstanding; supplier payment terms. |
+| `current_ratio` | `br08_omstgsu / br13_ksksu` | **ADDED**: Standard liquidity metric (current assets / current liabilities). Includes inventory, complements quick ratio. |
 | ~~`cash_conversion_cycle`~~ | ~~`dso_days + inventory_days - dpo_days`~~ | **REMOVED**: High correlation with `dso_days` (r=0.971). |
 | `ratio_nwc_sales` | `(br06_lagerkford + br07_kplackaba - br13_ksksu) / rr01_ntoms` | Net working capital relative to sales. |
 
@@ -48,20 +77,22 @@ This document summarises every engineered feature produced by `credit_risk_xai.f
 | `ratio_secured_debt_assets` | `(br14_kskkrin + br16_lskkrin) / br09_tillgsu` | Secured debt relative to total assets. |
 | `ratio_retained_earnings_equity` | `br10e_balres / br10_eksu` | Retained earnings composition of equity. |
 | ~~`equity_to_sales`~~ | ~~`br10_eksu / rr01_ntoms`~~ | **REMOVED**: Redundant (multicollinearity & low unique contribution after pruning). |
-| `equity_to_profit`| `br10_eksu / rr15_resar` | Equity base relative to net profit generation. |
-| `assets_to_profit`| `br09_tillgsu / rr15_resar` | Asset base relative to net profit generation. |
+| ~~`equity_to_profit`~~ | ~~`br10_eksu / rr15_resar`~~ | **REMOVED**: Redundant with ROE (`ny_avkegkap`); unstable denominator (profit can be ≤ 0). |
+| ~~`assets_to_profit`~~ | ~~`br09_tillgsu / rr15_resar`~~ | **REMOVED**: Redundant with ROA (`ny_avktokap`); unstable denominator (profit can be ≤ 0). |
 
-## Removed Raw Financial Statement Values
+## Raw Financial Statement Values: Log-Transformed Approach
 
-The following raw financial statement values are excluded from the model despite being used in feature engineering:
+**Previous Approach** (Now Revised): Raw nominal values were excluded, assuming size was sufficiently captured by employee count and equity.
 
-| Feature | Definition | Removal Rationale |
-| --- | --- | --- |
-| ~~`rr01_ntoms`~~ | Net revenue (total sales) in kSEK | **REMOVED**: Firm size controlled by `bslov_antanst` (employees) and `br10_eksu` (equity); revenue scale information captured by derivatives (`revenue_cagr_3y`, `revenue_drawdown_5y`, `rr01_ntoms_yoy_abs`). Raw revenue magnitude adds no incremental predictive value after controlling for ratios and growth. |
-| ~~`br09_tillgsu`~~ | Total assets in kSEK | **REMOVED**: High correlation with `br10_eksu` (r=0.904); balance sheet size sufficiently represented by equity. Avoiding multicollinearity. |
-| ~~`rr07_rorresul`~~ | Operating profit/loss in kSEK | **REMOVED**: Redundant with profitability ratios (`ny_nettomarg`, `ny_avkegkap`); profit dynamics captured by `rr07_rorresul_yoy_pct`. Raw absolute profit less informative than margins and growth rates. |
+**Current Approach**: Based on model analysis showing that absolute levels DO matter (e.g., `br07b_kabasu` ranked #5, `br10_eksu` ranked #21), and aligning with academic literature (Altman Z-Score, Italian models using log(assets)), **all nominal financial statement values are now included as log-transformed features**.
 
-**Rationale for excluding raw values**: After controlling for firm size (employees, equity), efficiency ratios (margins, turnover), and temporal dynamics (growth, trends), the absolute magnitude of financial statement line items provides minimal incremental information. Modern credit risk models prioritize **relative performance** (ratios) and **change dynamics** (trends, growth) over absolute scale.
+**Rationale for log transformation**:
+1. **Reduces skewness**: Financial data is heavily right-skewed; log transformation normalizes distributions
+2. **Scale invariance**: log(1M kr) - log(100k kr) ≈ log(10M kr) - log(1M kr) → equal percentage changes
+3. **Literature alignment**: Italian bankruptcy models and Altman Z-Score use log(total assets) as standard practice
+4. **SME relevance**: Absolute scale matters for small firms where fixed costs and indivisibilities create threshold effects
+
+All log transformations use `log1p()` (robust to zeros). Negative values return NaN (not economically meaningful for balance sheet items; acceptable for profit measures where losses indicate distress).
 
 ## YoY Change & Trend Features
 
@@ -74,8 +105,10 @@ The following raw financial statement values are excluded from the model despite
 | `ny_skuldgrd_yoy_diff` | YoY differences in leverage. | Capital structure drift. |
 | `ratio_cash_liquidity_yoy_pct` | YoY change in quick ratio. | Liquidity trend. |
 | `ratio_cash_liquidity_yoy_abs` | YoY absolute change in quick ratio. | Liquidity trend magnitude. |
-| `ratio_ebit_interest_cov_yoy_pct` | YoY change in EBIT coverage. | Debt service trend. |
-| ~~`dso_days_yoy_diff`~~, `inventory_days_yoy_diff`, `dpo_days_yoy_diff` | YoY differences in working capital efficiency. | **dso_days_yoy_diff REMOVED**: dso_days redundant with ratio_nwc_sales. |
+| ~~`ratio_ebit_interest_cov_yoy_pct`~~ | ~~YoY change in EBIT coverage.~~ | **REMOVED**: `ratio_ebit_interest_cov` removed (low SHAP). |
+| `dso_days_yoy_diff`, `inventory_days_yoy_diff`, `dpo_days_yoy_diff` | YoY differences in working capital efficiency. | **dso_days_yoy_diff ADDED BACK**: Complements DSO level; working capital trinity complete. |
+| `current_ratio_yoy_pct` | YoY change in current ratio. | **ADDED**: Liquidity trend for current ratio. |
+| `net_debt_to_ebitda_yoy_diff` | YoY change in net debt to EBITDA. | **ADDED**: Leverage trajectory; indicates improving/deteriorating debt service capacity. |
 
 ## Temporal Features (Multi-Year Lookback)
 
@@ -119,7 +152,7 @@ Early warning signals for operational deterioration and cash flow stress.
 | `inventory_days_trend_3y` | 3 years | Linear slope of inventory days on hand | Rising inventory days may indicate obsolescence or demand weakness. |
 | `dpo_days_trend_3y` | 3 years | Linear slope of days payables outstanding | Lengthening payment cycles can signal liquidity pressure. |
 
-**Note**: Trend features were more informative than volatility or average-based features for working capital metrics. Two components (inventory, DPO) provide complementary signals about working capital management; DSO removed due to redundancy with net working capital ratio.
+**Note**: Trend features were more informative than volatility or average-based features for working capital metrics. DSO trends were not included (user preference to avoid redundancy with temporal DSO features).
 
 ### Excluded Temporal Feature Categories
 
@@ -133,6 +166,43 @@ The following temporal feature types were systematically excluded after testing:
 | Cash liquidity temporal features | Static ratio and YoY changes capture signal; trends/volatility/averages redundant | AUC drop: -0.000277 (negative = overfitting) |
 
 **Key insight**: For margin and liquidity metrics, **static values + YoY changes** are more robust than multi-year trends/volatility/averages, which tend to overfit to validation-specific patterns.
+
+## Operating Cash Flow (OCF) Features
+
+**NEW**: Based on academic literature emphasizing cash flow over accounting profit, OCF proxy features have been added.
+
+| Feature | Definition | Purpose |
+| --- | --- | --- |
+| `ocf_proxy` | `(rr07_rorresul + rr05_avskriv) - ΔWorking Capital` | **ADDED**: Operating cash flow proxy. EBIT + Depreciation minus change in working capital. Captures cash generation vs. accounting profit. |
+| `ratio_ocf_to_debt` | `ocf_proxy / (br13_ksksu + br15_lsksu)` | **ADDED**: OCF relative to total debt. Key solvency metric - measures debt service capacity from operations. |
+
+**Rationale**: Accounting profit can be manipulated via accruals; cash flow is harder to game. OCF-to-debt ratio is standard in leveraged finance and credit analysis.
+
+## Altman Z-Score Components
+
+**NEW**: Components from the Altman Z-Score model for private companies (widely cited bankruptcy prediction model).
+
+| Feature | Altman Component | Definition | Purpose |
+| --- | --- | --- | --- |
+| `working_capital_to_assets` | X₁ | `(br08_omstgsu - br13_ksksu) / br09_tillgsu` | **ADDED**: Liquidity normalized by firm size. Altman's X₁ component. |
+| `retained_earnings_to_assets` | X₂ | `br10e_balres / br09_tillgsu` | **ADDED**: Cumulative profitability normalized by size. Altman's X₂. Differs from existing `ratio_retained_earnings_equity` (uses assets vs. equity denominator). |
+
+**Note**: Other Altman components already exist:
+- X₃ (EBIT/Assets) ≈ `ny_avktokap` (ROA)
+- X₄ (Equity/Liabilities) = inverse of `ny_skuldgrd` (debt-to-equity)
+- X₅ (Sales/Assets) = `ny_kapomsh` (asset turnover)
+
+## Leverage & Financial Mismatch Features
+
+**NEW**: Advanced leverage metrics from academic literature (Italian bankruptcy models).
+
+| Feature | Definition | Purpose |
+| --- | --- | --- |
+| `financial_mismatch` | `(br13_ksksu - br08_omstgsu) / br09_tillgsu` | **ADDED**: Asset-liability maturity mismatch. Measures short-term liabilities exceeding current assets, normalized by total assets. Indicates refinancing risk. |
+| `net_debt_to_ebitda` | `(br13_ksksu + br15_lsksu - br07_kplackaba) / (rr07_rorresul + rr05_avskriv)` | **ADDED**: Net debt (total debt minus liquid assets) relative to EBITDA. Classic leveraged finance metric. |
+| `net_debt_to_ebitda_yoy_diff` | YoY change in `net_debt_to_ebitda` | **ADDED**: Leverage trajectory. Positive values indicate deteriorating debt service capacity. |
+
+**Rationale**: Standard debt metrics may miss refinancing risk (short-term debt with illiquid assets) and overlook cash buffers (net debt vs. gross debt). These features are standard in credit rating agencies and leveraged finance.
 
 ## Credit Event History
 

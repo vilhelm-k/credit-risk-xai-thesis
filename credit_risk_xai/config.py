@@ -181,106 +181,106 @@ COLS_TO_LOAD = list(
 # Engineered feature registries
 # -----------------------------------------------------------------------------
 
+# Log-transformed nominal values (reduce skewness, align with literature)
+LOG_NOMINAL_FEATURES = [
+    "log_rr01_ntoms",       # Net revenue
+    "log_br09_tillgsu",     # Total assets (Altman/Italian paper standard)
+    "log_br10_eksu",        # Total equity
+    "log_br07b_kabasu",     # Cash and bank
+    "log_bslov_antanst",    # Number of employees
+    "log_rr07_rorresul",    # Operating profit (NaN for negatives)
+    "log_rr15_resar",       # Net profit (NaN for negatives)
+]
+
+# Cost structure & profitability ratios
 RATIO_FEATURE_NAMES = [
-    # "ratio_personnel_cost",  # REMOVED: Redundant (multicollinearity & low unique contribution)
     "ratio_depreciation_cost",
-    # "ratio_other_operating_cost",  # REMOVED: Lowest individual impact (-0.000446 AUC), 3 red flags, SHAP=0.010
-    # "ratio_financial_cost",  # REMOVED: Redundant (multicollinearity & low unique contribution)
-    # "ratio_ebitda_margin",  # REMOVED: Near-perfect correlation with ny_rormarg (r=0.998)
-    "ratio_ebit_interest_cov",
-    # "ratio_ebitda_interest_cov",  # REMOVED: Highly correlated with ratio_ebit_interest_cov (r=0.99)
     "ratio_cash_interest_cov",
     "ratio_cash_liquidity",
     "ratio_nwc_sales",
     "ratio_short_term_debt_share",
     "ratio_secured_debt_assets",
     "ratio_retained_earnings_equity",
-    # "ratio_share_capital_equity", # REMOVED: Low importance
-    "ratio_dividend_payout",
-    # "ratio_group_support",  # REMOVED: Only relevant for subsidiaries/group companies; filtered to independent companies only
-    # "equity_to_sales",  # REMOVED: Redundant (multicollinearity & low unique contribution)
-    "equity_to_profit",
-    "assets_to_profit",
-    # "ratio_intragroup_financing_share",  # REMOVED: Only relevant for subsidiaries/group companies; filtered to independent companies only
+    "dividend_yield",  # Replaced ratio_dividend_payout (unstable denominator)
 ]
 
+# Working capital efficiency & liquidity
 LIQUIDITY_EFFICIENCY_FEATURES = [
-    # "dso_days",  # REMOVED: Redundant (multicollinearity with ratio_nwc_sales, r=-0.944)
-    # "inventory_days",  # REMOVED: Low importance; information captured by derivatives (inventory_days_yoy_diff, inventory_days_trend_3y)
-    "dpo_days",
-    # "cash_conversion_cycle",  # REMOVED: High correlation with dso_days (r=0.971)
+    "dso_days",         # Days sales outstanding (restored for working capital trinity)
+    "dpo_days",         # Days payables outstanding
+    "current_ratio",    # Standard liquidity metric
 ]
 
+# Year-over-year changes and trends
 TREND_FEATURE_NAMES = [
-    # "rr01_ntoms_yoy_pct",  # REMOVED: Perfect correlation with ny_omsf (r=1.0)
     "rr01_ntoms_yoy_abs",
     "rr07_rorresul_yoy_pct",
-    # "rr07_rorresul_yoy_abs", # REMOVED: Redundant
-    # "br09_tillgsu_yoy_pct",  # REMOVED: br09_tillgsu redundant with br10_eksu
-    # "br09_tillgsu_yoy_abs",  # REMOVED: br09_tillgsu redundant with br10_eksu
     "ny_solid_yoy_diff",
     "ny_skuldgrd_yoy_diff",
     "ratio_cash_liquidity_yoy_pct",
-    "ratio_cash_liquidity_yoy_abs", # KEPT: As per user request
-    "ratio_ebit_interest_cov_yoy_pct",
-    # "dso_days_yoy_diff",  # REMOVED: dso_days redundant with ratio_nwc_sales
+    "ratio_cash_liquidity_yoy_abs",
+    "dso_days_yoy_diff",
     "inventory_days_yoy_diff",
     "dpo_days_yoy_diff",
+    "current_ratio_yoy_pct",
+    "net_debt_to_ebitda_yoy_diff",
 ]
 
-# Temporal features selected via 5×3 nested CV feature selection (Experiment 1-3)
+# Multi-year temporal features (selected via 5×3 nested CV)
 # See notebooks/03_feature_selection.ipynb for detailed analysis
-# 6 features selected (dso_days and br09_tillgsu features removed due to redundancy)
 TEMPORAL_FEATURE_NAMES = [
-    # Growth metrics (CAGR) - capture fundamental business momentum
+    # Growth metrics (CAGR) - fundamental business momentum
     "revenue_cagr_3y",
-    # "assets_cagr_3y",  # REMOVED: br09_tillgsu (total assets) redundant with br10_eksu (equity)
     "equity_cagr_3y",
     "profit_cagr_3y",
-    # Risk metrics (drawdown) - capture downside exposure
+    # Risk metrics (drawdown) - downside exposure
     "revenue_drawdown_5y",
     "equity_drawdown_5y",
-    # Working capital trends - early warning signals for operational deterioration
-    # "dso_days_trend_3y",  # REMOVED: dso_days redundant with ratio_nwc_sales
+    # Working capital trends - early warning signals
     "inventory_days_trend_3y",
     "dpo_days_trend_3y",
 ]
 
-CRISIS_FEATURE_NAMES = [
-    # "years_since_last_credit_event",  # REMOVED: Potential data leakage - backward-looking feature that may reflect information not available at prediction time
-    # "last_event_within_1y",  # REMOVED: Redundant with years_since_last_credit_event
-    # "last_event_within_2y",  # REMOVED: Redundant with years_since_last_credit_event
-    # "last_event_within_3y",  # REMOVED: Redundant with years_since_last_credit_event
-    # "last_event_within_5y",  # REMOVED: Redundant with years_since_last_credit_event
-    # "event_count_total",  # REMOVED: Replaced with event_count_last_5y to prevent overfitting to rare historical events
-    "event_count_last_5y",
-    # "ever_failed",  # REMOVED: Zero importance, redundant with event_count_total
+# Operating cash flow metrics
+OCF_FEATURE_NAMES = [
+    "ocf_proxy",             # EBIT + Depreciation - ΔWorking Capital
+    "ratio_ocf_to_debt",     # OCF relative to total debt
 ]
 
+# Altman Z-Score components
+ALTMAN_FEATURE_NAMES = [
+    "working_capital_to_assets",      # Altman X₁
+    "retained_earnings_to_assets",    # Altman X₂
+]
+
+# Leverage & financial mismatch
+LEVERAGE_FEATURE_NAMES = [
+    "financial_mismatch",    # Asset-liability maturity mismatch
+    "net_debt_to_ebitda",    # Net debt to EBITDA ratio
+]
+
+# Credit event history
+CRISIS_FEATURE_NAMES = [
+    "event_count_last_5y",   # Credit events in past 5 years
+]
+
+# Macroeconomic conditions
 MACRO_FEATURE_NAMES = [
-    "gdp_growth",  # KEPT: Core macroeconomic control despite low importance
-    # "gdp_growth_3y_avg", # REMOVED: Redundant
-    "interest_avg_short",  # KEPT: Core macroeconomic control despite low importance
-    # "interest_avg_medium",  # REMOVED: Highly correlated with short and long rates (r>0.95)
-    # "interest_avg_long",  # REMOVED: Highly correlated with short rate (r=0.88)
-    # "interest_delta_short", # REMOVED: Redundant
-    "term_spread",
-    # "term_spread_delta", # REMOVED: Redundant
-    # "inflation_yoy",  # REMOVED: Near-zero variance (0.0002), low importance
-    # "inflation_trailing_3y",  # REMOVED: Highly correlated with inflation_yoy (r=0.86)
-    # "unemp_rate",  # REMOVED: Low importance; macro conditions captured by gdp_growth and interest_avg_short
-    # "unemp_delta", # REMOVED: Redundant
-    # "real_revenue_growth", # REMOVED: Redundant
-    # "revenue_vs_gdp",  # REMOVED: Nearly identical to real_revenue_growth (r=0.999996)
-    # "profit_vs_gdp", # REMOVED: Redundant
-    "revenue_beta_gdp_5y",
+    "gdp_growth",            # Annual GDP growth
+    "interest_avg_short",    # Short-term interest rate
+    "term_spread",           # Long-short rate spread
+    "revenue_beta_gdp_5y",   # Revenue cyclicality (5y beta vs GDP)
 ]
 
 ENGINEERED_FEATURE_NAMES = (
-    RATIO_FEATURE_NAMES
+    LOG_NOMINAL_FEATURES
+    + RATIO_FEATURE_NAMES
     + LIQUIDITY_EFFICIENCY_FEATURES
     + TREND_FEATURE_NAMES
     + TEMPORAL_FEATURE_NAMES
+    + OCF_FEATURE_NAMES
+    + ALTMAN_FEATURE_NAMES
+    + LEVERAGE_FEATURE_NAMES
     + CRISIS_FEATURE_NAMES
     + MACRO_FEATURE_NAMES
 )

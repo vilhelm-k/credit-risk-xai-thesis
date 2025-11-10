@@ -37,6 +37,15 @@ def _safe_div(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
     return result.replace([np.inf, -np.inf], np.nan)
 
 
+def _safe_log(series: pd.Series) -> pd.Series:
+    """Log transform with robust handling of zeros and negatives.
+
+    Uses np.log1p(x) which computes log(1+x) efficiently and handles zeros.
+    Returns NaN for negative values (not economically meaningful for balance sheet items).
+    """
+    return series.where(series >= 0).apply(np.log1p)
+
+
 @njit(cache=True)
 def _rolling_slope_kernel(values: np.ndarray) -> float:
     """Compute slope of the linear trend for a dense 1D window with possible NaNs."""
@@ -210,6 +219,22 @@ def create_engineered_features(
     # Collect ALL new features in a single dictionary to minimize joins
     new_features = {}
 
+    logger.info("Creating log-transformed nominal features")
+    # Log-transform absolute financial values (kSEK) - NOT ratios/percentages
+    # These provide scale-invariant representations that reduce skewness
+    nominal_cols_to_log = [
+        "rr01_ntoms",      # Net revenue
+        "br09_tillgsu",    # Total assets
+        "br10_eksu",       # Total equity
+        "br07b_kabasu",    # Cash and bank
+        "bslov_antanst",   # Number of employees
+        "rr07_rorresul",   # Operating profit (can be negative - will return NaN for negatives)
+        "rr15_resar",      # Net profit (can be negative - will return NaN for negatives)
+    ]
+    for col in nominal_cols_to_log:
+        if col in df.columns:
+            new_features[f"log_{col}"] = _safe_log(df[col])
+
     logger.info("Computing cost structure and profitability ratios")
     # Compute intermediate values once
     ebitda = df["rr07_rorresul"] + df["rr05_avskriv"]
@@ -229,9 +254,9 @@ def create_engineered_features(
         #     df["rr09_finkostn"], df["rr01_ntoms"]
         # ),
         "ratio_ebitda_margin": _safe_div(ebitda, df["rr01_ntoms"]),
-        "ratio_ebit_interest_cov": _safe_div(
-            df["rr07_rorresul"], financial_cost_net
-        ),
+        # "ratio_ebit_interest_cov": _safe_div(  # REMOVED: Low SHAP (0.021), captured by ny_rs
+        #     df["rr07_rorresul"], financial_cost_net
+        # ),
         # "ratio_ebitda_interest_cov": _safe_div(ebitda, financial_cost_net),  # REMOVED: r=0.99 with ratio_ebit_interest_cov
         "ratio_cash_interest_cov": _safe_div(
             df["br07b_kabasu"], financial_cost_net
@@ -250,10 +275,11 @@ def create_engineered_features(
             df["br07b_kabasu"] + df["br07a_kplacsu"],
             df["br13_ksksu"],
         ),
-        # "dso_days": _safe_div(df["br06g_kfordsu"], df["rr01_ntoms"]) * 365,  # REMOVED: Redundant (multicollinearity with ratio_nwc_sales)
+        "dso_days": _safe_div(df["br06g_kfordsu"], df["rr01_ntoms"]) * 365,  # ADDED BACK: Completes working capital trinity
         "inventory_days": _safe_div(df["br06c_lagersu"], df["rr06a_prodkos"])
         * 365,
         "dpo_days": _safe_div(df["br13a_ksklev"], df["rr06a_prodkos"]) * 365,
+        "current_ratio": _safe_div(df["br08_omstgsu"], df["br13_ksksu"]),  # ADDED: Standard liquidity metric
         # "cash_conversion_cycle": _safe_div(df["br06g_kfordsu"], df["rr01_ntoms"]) * 365  # REMOVED: High correlation with dso_days
         # + _safe_div(df["br06c_lagersu"], df["rr06a_prodkos"]) * 365
         # - _safe_div(df["br13a_ksklev"], df["rr06a_prodkos"]) * 365,
@@ -278,11 +304,12 @@ def create_engineered_features(
         #     df["br10a_aktiekap"], df["br10_eksu"]
         # ), # REMOVED: Low importance
         # "equity_to_sales": _safe_div(df["br10_eksu"], df["rr01_ntoms"]),  # REMOVED: Redundant (multicollinearity & low unique contribution)
-        "equity_to_profit": _safe_div(df["br10_eksu"], df["rr15_resar"]),
-        "assets_to_profit": _safe_div(df["br09_tillgsu"], df["rr15_resar"]),
-        "ratio_dividend_payout": _safe_div(
-            df["rr00_utdbel"], df["rr15_resar"]
-        ),
+        # "equity_to_profit": _safe_div(df["br10_eksu"], df["rr15_resar"]),  # REMOVED: Redundant with ROE, unstable denominator
+        # "assets_to_profit": _safe_div(df["br09_tillgsu"], df["rr15_resar"]),  # REMOVED: Redundant with ROA, unstable denominator
+        # "ratio_dividend_payout": _safe_div(  # REMOVED: Unstable when profit ≤ 0
+        #     df["rr00_utdbel"], df["rr15_resar"]
+        # ),
+        "dividend_yield": _safe_div(df["rr00_utdbel"], df["br10_eksu"]),  # ADDED: Stable alternative using equity
         # "ratio_group_support": _safe_div(  # REMOVED: Only relevant for subsidiaries/group companies
         #     df["br10f_kncbdrel"] + df["br10g_agtskel"], df["rr01_ntoms"]
         # ),
@@ -316,9 +343,11 @@ def create_engineered_features(
                 fill_method=None
             ),
             "ratio_cash_liquidity_yoy_abs": group["ratio_cash_liquidity"].diff(),
-            "ratio_ebit_interest_cov_yoy_pct": group["ratio_ebit_interest_cov"].pct_change(
-                fill_method=None
-            ),
+            # "ratio_ebit_interest_cov_yoy_pct": group["ratio_ebit_interest_cov"].pct_change(  # REMOVED: ratio_ebit_interest_cov removed
+            #     fill_method=None
+            # ),
+            "dso_days_yoy_diff": group["dso_days"].diff(),  # ADDED BACK: Complements DSO level
+            "current_ratio_yoy_pct": group["current_ratio"].pct_change(fill_method=None),  # ADDED: Current ratio trend
         }
     )
 
@@ -362,6 +391,49 @@ def create_engineered_features(
     # These exclusions improve model parsimony without sacrificing performance
 
     # Join all rolling features at once
+    df = df.join(pd.DataFrame(new_features, index=df.index))
+    new_features.clear()
+
+    logger.info("Computing OCF proxy and related ratios")
+    # OCF proxy = EBIT + Depreciation - Change in Working Capital
+    # Note: ebitda was computed earlier (rr07_rorresul + rr05_avskriv)
+    working_capital = df["br08_omstgsu"] - df["br13_ksksu"]
+    wc_change = working_capital.groupby(level=0).diff()
+    ocf_proxy = ebitda - wc_change  # ebitda already includes EBIT + Depreciation
+
+    new_features.update({
+        "ocf_proxy": ocf_proxy,
+        "ratio_ocf_to_debt": _safe_div(ocf_proxy, total_debt),
+    })
+
+    logger.info("Computing Altman Z-Score components")
+    new_features.update({
+        "working_capital_to_assets": _safe_div(working_capital, df["br09_tillgsu"]),
+        "retained_earnings_to_assets": _safe_div(df["br10e_balres"], df["br09_tillgsu"]),
+    })
+
+    logger.info("Computing leverage and financial mismatch ratios")
+    net_debt = total_debt - df["br07_kplackaba"]  # Total debt minus liquid assets
+    net_debt_to_ebitda = _safe_div(net_debt, ebitda)
+
+    new_features.update({
+        "financial_mismatch": _safe_div(
+            df["br13_ksksu"] - df["br08_omstgsu"], df["br09_tillgsu"]
+        ),
+        "net_debt_to_ebitda": net_debt_to_ebitda,
+    })
+
+    # Join OCF, Altman, and leverage features
+    df = df.join(pd.DataFrame(new_features, index=df.index))
+    new_features.clear()
+
+    # Recreate groupby for YoY calculations on new features
+    group = df.groupby(level=0, group_keys=False)
+
+    # Compute YoY change for net_debt_to_ebitda
+    new_features["net_debt_to_ebitda_yoy_diff"] = group["net_debt_to_ebitda"].diff()
+
+    # Join YoY features
     df = df.join(pd.DataFrame(new_features, index=df.index))
     new_features.clear()
 
