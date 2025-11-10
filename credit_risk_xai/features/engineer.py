@@ -221,14 +221,12 @@ def create_engineered_features(
 
     logger.info("Creating log-transformed nominal features")
     # Log-transform absolute financial values (kSEK) - NOT ratios/percentages
-    # These provide scale-invariant representations that reduce skewness
+    # Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
+    # Removed: log_rr01_ntoms, log_br09_tillgsu, log_rr07_rorresul
     nominal_cols_to_log = [
-        "rr01_ntoms",      # Net revenue
-        "br09_tillgsu",    # Total assets
         "br10_eksu",       # Total equity
         "br07b_kabasu",    # Cash and bank
         "bslov_antanst",   # Number of employees
-        "rr07_rorresul",   # Operating profit (can be negative - will return NaN for negatives)
         "rr15_resar",      # Net profit (can be negative - will return NaN for negatives)
     ]
     for col in nominal_cols_to_log:
@@ -241,30 +239,13 @@ def create_engineered_features(
     financial_cost_net = df["rr09_finkostn"] - df["rr09d_jfrstfin"]
 
     new_features.update({
-        # "ratio_personnel_cost": _safe_div(  # REMOVED: Redundant (multicollinearity & low unique contribution)
-        #     df["rr04_perskos"], df["rr01_ntoms"]
-        # ),
         "ratio_depreciation_cost": _safe_div(
             df["rr05_avskriv"], df["rr01_ntoms"]
         ),
-        # "ratio_other_operating_cost": _safe_div(  # REMOVED: Lowest impact (-0.000446 AUC), 3 red flags
-        #     df["rr06_rorkoov"], df["rr01_ntoms"]
-        # ),
-        # "ratio_financial_cost": _safe_div(  # REMOVED: Redundant (multicollinearity & low unique contribution)
-        #     df["rr09_finkostn"], df["rr01_ntoms"]
-        # ),
-        "ratio_ebitda_margin": _safe_div(ebitda, df["rr01_ntoms"]),
-        # "ratio_ebit_interest_cov": _safe_div(  # REMOVED: Low SHAP (0.021), captured by ny_rs
-        #     df["rr07_rorresul"], financial_cost_net
-        # ),
-        # "ratio_ebitda_interest_cov": _safe_div(ebitda, financial_cost_net),  # REMOVED: r=0.99 with ratio_ebit_interest_cov
+        # ratio_ebitda_margin removed via feature selection (Strategy 4)
         "ratio_cash_interest_cov": _safe_div(
             df["br07b_kabasu"], financial_cost_net
         ),
-        # "ratio_intragroup_financing_share": _safe_div(  # REMOVED: Only relevant for subsidiaries/group companies
-        #     df["rr08a_rteinknc"] + df["rr09a_rtekoknc"],
-        #     df["rr08_finintk"] + df["rr09_finkostn"],
-        # ),
     })
 
     logger.info("Computing liquidity and working-capital efficiencies")
@@ -275,54 +256,24 @@ def create_engineered_features(
             df["br07b_kabasu"] + df["br07a_kplacsu"],
             df["br13_ksksu"],
         ),
-        "dso_days": _safe_div(df["br06g_kfordsu"], df["rr01_ntoms"]) * 365,  # ADDED BACK: Completes working capital trinity
-        "inventory_days": _safe_div(df["br06c_lagersu"], df["rr06a_prodkos"])
-        * 365,
+        "dso_days": _safe_div(df["br06g_kfordsu"], df["rr01_ntoms"]) * 365,
+        "inventory_days": _safe_div(df["br06c_lagersu"], df["rr06a_prodkos"]) * 365,  # Needed for inventory_days_yoy_diff
         "dpo_days": _safe_div(df["br13a_ksklev"], df["rr06a_prodkos"]) * 365,
-        "current_ratio": _safe_div(df["br08_omstgsu"], df["br13_ksksu"]),  # ADDED: Standard liquidity metric
-        # "cash_conversion_cycle": _safe_div(df["br06g_kfordsu"], df["rr01_ntoms"]) * 365  # REMOVED: High correlation with dso_days
-        # + _safe_div(df["br06c_lagersu"], df["rr06a_prodkos"]) * 365
-        # - _safe_div(df["br13a_ksklev"], df["rr06a_prodkos"]) * 365,
-        "ratio_nwc_sales": _safe_div(
-            df["br06_lagerkford"]
-            + df["br07_kplackaba"]
-            - df["br13_ksksu"],
-            df["rr01_ntoms"],
-        ),
+        # current_ratio, ratio_nwc_sales removed via feature selection (Strategy 4)
     })
 
     logger.info("Computing capital structure and payout ratios")
     new_features.update({
         "ratio_short_term_debt_share": _safe_div(df["br13_ksksu"], total_debt),
-        "ratio_secured_debt_assets": _safe_div(
-            df["br14_kskkrin"] + df["br16_lskkrin"], df["br09_tillgsu"]
-        ),
+        # ratio_secured_debt_assets removed via feature selection (Strategy 4)
         "ratio_retained_earnings_equity": _safe_div(
             df["br10e_balres"], df["br10_eksu"]
         ),
         "dividend_yield": _safe_div(df["rr00_utdbel"], df["br10_eksu"]),
     })
 
-    logger.info("Computing OCF proxy and related ratios (BEFORE dropping BR columns)")
-    # Compute these BEFORE dropping BR columns to avoid KeyErrors
-    working_capital = df["br08_omstgsu"] - df["br13_ksksu"]
-    net_debt = total_debt - df["br07_kplackaba"]
-
-    new_features.update({
-        # OCF features
-        "ocf_proxy": ebitda - working_capital.groupby(level=0).diff(),
-        "ratio_ocf_to_debt": _safe_div(
-            ebitda - working_capital.groupby(level=0).diff(), total_debt
-        ),
-        # Altman Z-Score components
-        "working_capital_to_assets": _safe_div(working_capital, df["br09_tillgsu"]),
-        "retained_earnings_to_assets": _safe_div(df["br10e_balres"], df["br09_tillgsu"]),
-        # Leverage & financial mismatch
-        "financial_mismatch": _safe_div(
-            df["br13_ksksu"] - df["br08_omstgsu"], df["br09_tillgsu"]
-        ),
-        "net_debt_to_ebitda": _safe_div(net_debt, ebitda),
-    })
+    # Note: OCF, Altman, and Leverage features removed via feature selection (Strategy 4)
+    # These features are no longer computed to save memory and processing time
 
     # Join basic ratios early so they can be used in trend calculations
     df = df.join(pd.DataFrame(new_features, index=df.index))
@@ -340,33 +291,32 @@ def create_engineered_features(
     group = df.groupby(level=0, group_keys=False)
 
     logger.info("Computing year-over-year deltas and immediate trends")
-    for col in ["rr07_rorresul"]:  # REMOVED: rr01_ntoms_yoy_pct (r=1.0 with ny_omsf), br09_tillgsu_yoy_pct (redundant with br10_eksu)
+    for col in ["rr07_rorresul"]:
         new_features[f"{col}_yoy_pct"] = group[col].pct_change(fill_method=None)
-    for col in ["rr01_ntoms"]:  # REMOVED: br09_tillgsu_yoy_abs (redundant with br10_eksu)
+    for col in ["rr01_ntoms"]:
         new_features[f"{col}_yoy_abs"] = group[col].diff()
+
+    # Compute current_ratio temporarily for current_ratio_yoy_pct calculation
+    current_ratio_temp = _safe_div(df["br08_omstgsu"], df["br13_ksksu"])
+
     new_features.update(
         {
             "ny_solid_yoy_diff": group["ny_solid"].diff(),
-            "ny_skuldgrd_yoy_diff": group["ny_skuldgrd"].diff(),
+            # ny_skuldgrd_yoy_diff removed via feature selection (Strategy 4)
             "ratio_cash_liquidity_yoy_pct": group["ratio_cash_liquidity"].pct_change(
                 fill_method=None
             ),
             "ratio_cash_liquidity_yoy_abs": group["ratio_cash_liquidity"].diff(),
-            # "ratio_ebit_interest_cov_yoy_pct": group["ratio_ebit_interest_cov"].pct_change(  # REMOVED: ratio_ebit_interest_cov removed
-            #     fill_method=None
-            # ),
-            "dso_days_yoy_diff": group["dso_days"].diff(),  # ADDED BACK: Complements DSO level
-            "current_ratio_yoy_pct": group["current_ratio"].pct_change(fill_method=None),  # ADDED: Current ratio trend
+            "dso_days_yoy_diff": group["dso_days"].diff(),
+            "current_ratio_yoy_pct": current_ratio_temp.groupby(level=0).pct_change(fill_method=None),  # Keep YoY change only
         }
     )
 
-    # Compute CAGR features (selected via nested CV - see notebooks/03_feature_selection.ipynb)
-    # Only 3y windows were selected; 5y variants did not provide incremental value
-    # assets_cagr_3y removed: br09_tillgsu redundant with br10_eksu
+    # Compute CAGR features
+    # Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
+    # Removed: equity_cagr_3y
     for source, target, window in [
         ("rr01_ntoms", "revenue_cagr_3y", 3),
-        # ("br09_tillgsu", "assets_cagr_3y", 3),  # REMOVED: br09_tillgsu redundant with br10_eksu
-        ("br10_eksu", "equity_cagr_3y", 3),
         ("rr15_resar", "profit_cagr_3y", 3),
     ]:
         new_features[target] = _compute_cagr(df[source], window)
@@ -376,20 +326,16 @@ def create_engineered_features(
     new_features.clear()
 
     logger.info("Computing selected temporal features (working capital trends & drawdowns)")
-    # TEMPORAL FEATURES: Selected via 5×3 nested CV (see notebooks/03_feature_selection.ipynb)
-    # 7 features selected from 34 candidates (dso_days features removed due to redundancy)
+    # Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
+    # Removed: inventory_days_trend_3y, equity_drawdown_5y
 
     # Working capital trends (3y) - early warning signals for operational deterioration
     new_features.update({
-        # "dso_days_trend_3y": _rolling_slope(df["dso_days"], window=3),  # REMOVED: dso_days redundant with ratio_nwc_sales
-        "inventory_days_trend_3y": _rolling_slope(df["inventory_days"], window=3),
         "dpo_days_trend_3y": _rolling_slope(df["dpo_days"], window=3),
-        # "dso_days_yoy_diff": group["dso_days"].diff(),  # REMOVED: dso_days redundant with ratio_nwc_sales
         "inventory_days_yoy_diff": group["inventory_days"].diff(),
         "dpo_days_yoy_diff": group["dpo_days"].diff(),
         # Risk metrics (drawdown) - capture downside exposure
         "revenue_drawdown_5y": _rolling_drawdown(df["rr01_ntoms"], window=5),
-        "equity_drawdown_5y": _rolling_drawdown(df["br10_eksu"], window=5),
     })
 
     # EXCLUDED TEMPORAL FEATURES (based on nested CV analysis):

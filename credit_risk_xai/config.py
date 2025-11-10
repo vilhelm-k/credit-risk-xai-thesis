@@ -55,17 +55,14 @@ BASE_COLS = [
 ]
 
 NY_COLS = [
+    # Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
     "ny_kapomsh",
-    "ny_avktokap",
     "ny_rs",
     "ny_skuldgrd",
     "ny_solid",
     "ny_avkegkap",
-    # "ny_rorkapo",  # REMOVED: Perfect correlation with ratio_nwc_sales (r≈1.0), more NaNs, slightly lower AUC
     "ny_kasslikv",
-    # "ny_rormarg",  # REMOVED: Redundant (multicollinearity with ny_nettomarg, r=0.979)
     "ny_nettomarg",
-    # "ny_vinstprc", # REMOVED: Redundant with ny_nettomarg
     "ny_omspanst",
     "ny_foradlvpanst",
     "ny_omsf",
@@ -185,85 +182,60 @@ COLS_TO_LOAD = list(
 # -----------------------------------------------------------------------------
 
 # Log-transformed nominal values (reduce skewness, align with literature)
+# Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
 LOG_NOMINAL_FEATURES = [
-    "log_rr01_ntoms",       # Net revenue
-    "log_br09_tillgsu",     # Total assets (Altman/Italian paper standard)
     "log_br10_eksu",        # Total equity
     "log_br07b_kabasu",     # Cash and bank
     "log_bslov_antanst",    # Number of employees
-    "log_rr07_rorresul",    # Operating profit (NaN for negatives)
     "log_rr15_resar",       # Net profit (NaN for negatives)
 ]
 
 # Cost structure & profitability ratios
+# Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
 RATIO_FEATURE_NAMES = [
     "ratio_depreciation_cost",
     "ratio_cash_interest_cov",
     "ratio_cash_liquidity",
-    "ratio_nwc_sales",
     "ratio_short_term_debt_share",
-    "ratio_secured_debt_assets",
     "ratio_retained_earnings_equity",
-    "dividend_yield",  # Replaced ratio_dividend_payout (unstable denominator)
+    "dividend_yield",
 ]
 
 # Working capital efficiency & liquidity
+# Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
 LIQUIDITY_EFFICIENCY_FEATURES = [
-    "dso_days",         # Days sales outstanding (restored for working capital trinity)
+    "dso_days",         # Days sales outstanding
     "dpo_days",         # Days payables outstanding
-    "current_ratio",    # Standard liquidity metric
 ]
 
 # Year-over-year changes and trends
+# Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
 TREND_FEATURE_NAMES = [
     "rr01_ntoms_yoy_abs",
     "rr07_rorresul_yoy_pct",
     "ny_solid_yoy_diff",
-    "ny_skuldgrd_yoy_diff",
     "ratio_cash_liquidity_yoy_pct",
     "ratio_cash_liquidity_yoy_abs",
     "dso_days_yoy_diff",
     "inventory_days_yoy_diff",
     "dpo_days_yoy_diff",
     "current_ratio_yoy_pct",
-    "net_debt_to_ebitda_yoy_diff",
 ]
 
-# Multi-year temporal features (selected via 5×3 nested CV)
-# See notebooks/03_feature_selection.ipynb for detailed analysis
+# Multi-year temporal features
+# Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
 TEMPORAL_FEATURE_NAMES = [
     # Growth metrics (CAGR) - fundamental business momentum
     "revenue_cagr_3y",
-    "equity_cagr_3y",
     "profit_cagr_3y",
     # Risk metrics (drawdown) - downside exposure
     "revenue_drawdown_5y",
-    "equity_drawdown_5y",
     # Working capital trends - early warning signals
-    "inventory_days_trend_3y",
     "dpo_days_trend_3y",
 ]
 
-# Operating cash flow metrics
-OCF_FEATURE_NAMES = [
-    "ocf_proxy",                      # EBIT + Depreciation - ΔWorking Capital
-    "ratio_ocf_to_debt",              # OCF relative to total debt
-    "ocf_proxy_yoy_pct",              # YoY % change in OCF proxy
-    "ratio_ocf_to_debt_yoy_diff",     # YoY change in OCF-to-debt ratio
-    "ocf_proxy_trend_3y",             # 3-year trend (slope) of OCF proxy
-]
-
-# Altman Z-Score components
-ALTMAN_FEATURE_NAMES = [
-    "working_capital_to_assets",      # Altman X₁
-    "retained_earnings_to_assets",    # Altman X₂
-]
-
-# Leverage & financial mismatch
-LEVERAGE_FEATURE_NAMES = [
-    "financial_mismatch",    # Asset-liability maturity mismatch
-    "net_debt_to_ebitda",    # Net debt to EBITDA ratio
-]
+# Note: OCF, Altman, and Leverage features removed via feature selection
+# These were not selected in the final 40-feature set (Strategy 4: Hybrid)
 
 # Credit event history
 CRISIS_FEATURE_NAMES = [
@@ -271,11 +243,9 @@ CRISIS_FEATURE_NAMES = [
 ]
 
 # Macroeconomic conditions
+# Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
 MACRO_FEATURE_NAMES = [
-    "gdp_growth",            # Annual GDP growth
-    "interest_avg_short",    # Short-term interest rate
     "term_spread",           # Long-short rate spread
-    "revenue_beta_gdp_5y",   # Revenue cyclicality (5y beta vs GDP)
 ]
 
 ENGINEERED_FEATURE_NAMES = (
@@ -284,9 +254,6 @@ ENGINEERED_FEATURE_NAMES = (
     + LIQUIDITY_EFFICIENCY_FEATURES
     + TREND_FEATURE_NAMES
     + TEMPORAL_FEATURE_NAMES
-    + OCF_FEATURE_NAMES
-    + ALTMAN_FEATURE_NAMES
-    + LEVERAGE_FEATURE_NAMES
     + CRISIS_FEATURE_NAMES
     + MACRO_FEATURE_NAMES
 )
@@ -392,15 +359,9 @@ CATEGORICAL_COLS = [
 SME_CATEGORIES = ["Micro", "Small", "Medium", "Large"]
 
 BASE_MODEL_FEATURES = [
-    "bslov_antanst",
-    # "ser_aktiv",  # REMOVED: Zero importance (all companies are active in filtered dataset)
-    # "ser_nystartat",  # REMOVED: Zero variance (SHAP=0.0004)
+    # Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
     "company_age",
-    # "ser_stklf", # REMOVED: Duplicative with bslov_antanst
     "bransch_sni071_konv",
-    "bransch_borsbransch_konv",
-    # "ser_laen",  # REMOVED: Geographic control with low predictive value
-    # "knc_kncfall",  # REMOVED: Used as filter (knc_kncfall==1) rather than feature; model applies to independent companies only
 ]
 
 FEATURES_FOR_MODEL = [
