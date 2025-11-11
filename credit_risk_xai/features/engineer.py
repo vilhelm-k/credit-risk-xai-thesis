@@ -37,6 +37,22 @@ def _safe_div(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
     return result.replace([np.inf, -np.inf], np.nan)
 
 
+def _safe_pct_change(series: pd.Series) -> pd.Series:
+    """Compute percentage change with proper handling of zero-to-non-zero transitions.
+
+    Zero-to-non-zero transitions are set to NaN because they produce infinite
+    or meaningless percentage changes. This commonly occurs when a company goes
+    from zero debt/cash to having debt/cash, or vice versa.
+    """
+    shifted = series.groupby(level=0).shift(1)
+    # Mask zero-to-non-zero transitions: previous value is 0 but current is not
+    zero_to_nonzero = (shifted == 0) & (series != 0)
+    # Standard pct_change calculation
+    result = series.groupby(level=0).pct_change(fill_method=None)
+    # Set zero-to-non-zero transitions to NaN
+    return result.where(~zero_to_nonzero, np.nan)
+
+
 def _safe_log(series: pd.Series) -> pd.Series:
     """Log transform with robust handling of zeros and negatives.
 
@@ -231,7 +247,7 @@ def create_engineered_features(
     ]
     for col in nominal_cols_to_log:
         if col in df.columns:
-            new_features[f"log_{col}"] = _safe_log(df[col])
+            new_features[f"log_{col}"] = _safe_log(df[col]).astype("float32")
 
     logger.info("Computing cost structure and profitability ratios")
     # Compute intermediate values once
@@ -249,12 +265,24 @@ def create_engineered_features(
     })
 
     logger.info("Computing liquidity and working-capital efficiencies")
-    total_debt = df["br13_ksksu"] + df["br15_lsksu"]
+    # Compute current liabilities total (sum of subcategories)
+    current_liabilities = (
+        df["br13a_ksklev"].fillna(0) +
+        df["br13b_kskknc"].fillna(0) +
+        df["br13c_kskov"].fillna(0)
+    )
+    # Compute long-term liabilities total (sum of subcategories)
+    longterm_liabilities = (
+        df["br15a_lskknc"].fillna(0) +
+        df["br15b_lskov"].fillna(0) +
+        df["br15c_obllan"].fillna(0)
+    )
+    total_debt = current_liabilities + longterm_liabilities
 
     new_features.update({
         "ratio_cash_liquidity": _safe_div(
             df["br07b_kabasu"] + df["br07a_kplacsu"],
-            df["br13_ksksu"],
+            current_liabilities,
         ),
         "dso_days": _safe_div(df["br06g_kfordsu"], df["rr01_ntoms"]) * 365,
         "inventory_days": _safe_div(df["br06c_lagersu"], df["rr06a_prodkos"]) * 365,  # Needed for inventory_days_yoy_diff
@@ -264,7 +292,7 @@ def create_engineered_features(
 
     logger.info("Computing capital structure and payout ratios")
     new_features.update({
-        "ratio_short_term_debt_share": _safe_div(df["br13_ksksu"], total_debt),
+        "ratio_short_term_debt_share": _safe_div(current_liabilities, total_debt),
         # ratio_secured_debt_assets removed via feature selection (Strategy 4)
         "ratio_retained_earnings_equity": _safe_div(
             df["br10e_balres"], df["br10_eksu"]
@@ -272,8 +300,24 @@ def create_engineered_features(
         "dividend_yield": _safe_div(df["rr00_utdbel"], df["br10_eksu"]),
     })
 
-    # Note: OCF, Altman, and Leverage features removed via feature selection (Strategy 4)
-    # These features are no longer computed to save memory and processing time
+    # Compute current_ratio now (needed for YoY calculations later)
+    # Must be computed before dropping BR columns
+    current_ratio_temp = _safe_div(df["br08_omstgsu"], current_liabilities)
+    new_features["current_ratio_temp"] = current_ratio_temp
+
+    # Compute OCF and leverage features (needed for YoY/trend calculations even if not in final model)
+    working_capital = df["br08_omstgsu"] - current_liabilities
+    net_debt = total_debt - df["br07_kplackaba"]
+
+    new_features.update({
+        # OCF features
+        "ocf_proxy": ebitda - working_capital.groupby(level=0).diff(),
+        "ratio_ocf_to_debt": _safe_div(
+            ebitda - working_capital.groupby(level=0).diff(), total_debt
+        ),
+        # Leverage metric
+        "net_debt_to_ebitda": _safe_div(net_debt, ebitda),
+    })
 
     # Join basic ratios early so they can be used in trend calculations
     df = df.join(pd.DataFrame(new_features, index=df.index))
@@ -292,23 +336,18 @@ def create_engineered_features(
 
     logger.info("Computing year-over-year deltas and immediate trends")
     for col in ["rr07_rorresul"]:
-        new_features[f"{col}_yoy_pct"] = group[col].pct_change(fill_method=None)
+        new_features[f"{col}_yoy_pct"] = _safe_pct_change(df[col])
     for col in ["rr01_ntoms"]:
         new_features[f"{col}_yoy_abs"] = group[col].diff()
-
-    # Compute current_ratio temporarily for current_ratio_yoy_pct calculation
-    current_ratio_temp = _safe_div(df["br08_omstgsu"], df["br13_ksksu"])
 
     new_features.update(
         {
             "ny_solid_yoy_diff": group["ny_solid"].diff(),
             # ny_skuldgrd_yoy_diff removed via feature selection (Strategy 4)
-            "ratio_cash_liquidity_yoy_pct": group["ratio_cash_liquidity"].pct_change(
-                fill_method=None
-            ),
+            "ratio_cash_liquidity_yoy_pct": _safe_pct_change(df["ratio_cash_liquidity"]),
             "ratio_cash_liquidity_yoy_abs": group["ratio_cash_liquidity"].diff(),
             "dso_days_yoy_diff": group["dso_days"].diff(),
-            "current_ratio_yoy_pct": current_ratio_temp.groupby(level=0).pct_change(fill_method=None),  # Keep YoY change only
+            "current_ratio_yoy_pct": _safe_pct_change(df["current_ratio_temp"]),  # Keep YoY change only
         }
     )
 
@@ -324,6 +363,9 @@ def create_engineered_features(
     # Join trends and CAGR before computing rolling features that depend on them
     df = df.join(pd.DataFrame(new_features, index=df.index))
     new_features.clear()
+
+    # Drop temporary current_ratio column (we only need the YoY change)
+    df.drop(columns=["current_ratio_temp"], inplace=True, errors="ignore")
 
     logger.info("Computing selected temporal features (working capital trends & drawdowns)")
     # Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
@@ -357,7 +399,7 @@ def create_engineered_features(
         # Leverage YoY
         "net_debt_to_ebitda_yoy_diff": group["net_debt_to_ebitda"].diff(),
         # OCF YoY changes
-        "ocf_proxy_yoy_pct": group["ocf_proxy"].pct_change(fill_method=None),
+        "ocf_proxy_yoy_pct": _safe_pct_change(df["ocf_proxy"]),
         "ratio_ocf_to_debt_yoy_diff": group["ratio_ocf_to_debt"].diff(),
         # OCF 3-year trend
         "ocf_proxy_trend_3y": _rolling_slope(df["ocf_proxy"], window=3),
