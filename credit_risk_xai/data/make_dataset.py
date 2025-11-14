@@ -58,9 +58,8 @@ def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     Conversions:
     - Identifiers (ORGNR, ser_year) → Int64/Int32
     - Binary indicators (0/1) → Int8
-    - Small integer codes → Int8/Int32
+    - Small integer codes → Int8/Int32 or category (for CATEGORICAL_COLS)
     - Financial data (kSEK, ratios) → float32
-    - Categorical codes → category (after int conversion)
 
     Expected memory reduction: 40-50%
     """
@@ -78,11 +77,18 @@ def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     # Phase 2: Small ordinal/categorical integers
     df["ser_stklf"] = df["ser_stklf"].astype("Int8")
     df["bslov_antanst"] = df["bslov_antanst"].astype("Int32")
-    # Convert to numeric first to handle any non-numeric values, then to Int32
-    df["bransch_sni071_konv"] = pd.to_numeric(df["bransch_sni071_konv"], errors="coerce").astype("Int32")
-    df["bransch_borsbransch_konv"] = df["bransch_borsbransch_konv"].astype("Int8")
-    df["ser_laen"] = df["ser_laen"].astype("Int8")
-    df["knc_kncfall"] = df["knc_kncfall"].astype("Int8")
+
+    # Categorical columns: convert to string (will apply category dtype after concat)
+    # This avoids concat losing categorical dtypes for high-cardinality columns
+    # Skip sme_category as it's already a properly formatted category from classify_sme_eu_vectorized
+    for col in CATEGORICAL_COLS:
+        if col in df.columns and col != "sme_category":
+            df[col] = df[col].astype(str)
+            logger.debug(f"  Converted {col} to string")
+
+    # Other numeric codes that are NOT in CATEGORICAL_COLS
+    if "knc_kncfall" not in CATEGORICAL_COLS:
+        df["knc_kncfall"] = df["knc_kncfall"].astype("Int8")
 
     # Phase 3: Downcast all financial data to float32
     # Financial ratios (ny_* columns)
@@ -104,13 +110,6 @@ def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].astype("float32")
 
     logger.debug("Data type optimization completed")
-    return df
-
-
-def _ensure_categories(df: pd.DataFrame, columns: Iterable[str]) -> pd.DataFrame:
-    """Convert specified columns to categorical type."""
-    for col in columns:
-        df[col] = df[col].astype("category")
     return df
 
 
@@ -174,10 +173,22 @@ def generate_serrano_base(
         raise RuntimeError("No frames loaded from raw files.")
 
     interim_df = pd.concat(frames, ignore_index=True)
-
-    # Apply categorical conversion for specified columns
-    interim_df = _ensure_categories(interim_df, CATEGORICAL_COLS)
     interim_df.sort_values(["ORGNR", "ser_year"], inplace=True)
+
+    # Apply categorical dtypes after concat (columns are strings at this point, except sme_category)
+    # This ensures PyArrow can preserve them as dictionary<values=string>
+    logger.info("Applying categorical dtypes to configured columns")
+    for col in CATEGORICAL_COLS:
+        if col in interim_df.columns:
+            # sme_category is already category dtype, just verify it
+            if col == "sme_category":
+                if interim_df[col].dtype.name != 'category':
+                    interim_df[col] = interim_df[col].astype('category')
+                logger.debug(f"  Verified {col} is category dtype")
+            else:
+                # Other columns are strings, convert to category
+                interim_df[col] = interim_df[col].astype('category')
+                logger.debug(f"  Converted {col} to category dtype")
 
     # Log memory usage
     memory_mb = interim_df.memory_usage(deep=True).sum() / 1024**2

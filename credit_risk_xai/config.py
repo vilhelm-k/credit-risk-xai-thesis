@@ -345,15 +345,14 @@ FEATURE_GROUPS_BY_SOURCE = {
 # Modeling configuration
 # -----------------------------------------------------------------------------
 
+# Categorical columns for LightGBM native categorical support
+# Only includes true categoricals that benefit from categorical encoding
+# Binary/ordinal columns kept as numeric for filtering (knc_kncfall, ser_aktiv, etc.)
 CATEGORICAL_COLS = [
-    "bransch_sni071_konv",
-    "bransch_borsbransch_konv",
-    "ser_laen",
-    "knc_kncfall",
-    "ser_aktiv",
-    "ser_nystartat",
-    "bol_konkurs",
-    "sme_category",
+    "bransch_sni071_konv",       # Industry code (SNI): ~800 categories
+    "bransch_borsbransch_konv",  # Stock exchange industry: 13 categories
+    "ser_laen",                  # County code: ~20 categories
+    "sme_category",              # SME size category: 4 categories (Micro/Small/Medium/Large)
 ]
 
 SME_CATEGORIES = ["Micro", "Small", "Medium", "Large"]

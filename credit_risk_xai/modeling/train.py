@@ -100,6 +100,7 @@ def train_lightgbm(
         y_train,
         eval_set=[(X_train, y_train), (X_val, y_val)],
         eval_metric=eval_metric,
+        categorical_feature='auto',  # Auto-detect category dtype for native categorical support
         callbacks=booster_callbacks,
     )
     duration = time.perf_counter() - start

@@ -30,11 +30,103 @@ app = typer.Typer(help="Feature engineering commands.")
 
 
 def _safe_div(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
+    """
+    Safe division with NaN for zero/missing denominators and inf results.
+
+    Parameters:
+    -----------
+    numerator : pd.Series
+        Numerator values
+    denominator : pd.Series
+        Denominator values
+
+    Returns:
+    --------
+    pd.Series
+        Division result with NaN for:
+        - denominator is NaN or zero
+        - result is inf or -inf
+    """
     result = numerator / denominator
-    mask = denominator.isna() | (denominator == 0)
-    if mask.any():
-        result = result.mask(mask)
+    # Replace inf/-inf with NaN (defensive - should already be NaN from 0 division)
     return result.replace([np.inf, -np.inf], np.nan)
+
+
+# Global tracker for domain bounds statistics
+_BOUNDS_STATS = []
+
+def _apply_domain_bounds(
+    series: pd.Series,
+    lower: float,
+    upper: float,
+    name: str = "feature"
+) -> pd.Series:
+    """
+    Set values outside domain bounds to NaN.
+
+    Domain bounds encode business/economic knowledge about what values are
+    physically or economically possible. Values outside these bounds indicate
+    data errors, calculation issues, or edge cases that shouldn't be trusted.
+
+    We use NaN (not clamping) because:
+    - Clamping introduces bias (pretends we know the value is exactly at boundary)
+    - NaN is honest - we don't trust this value
+    - Missing data is informative (may signal data quality issues)
+
+    Parameters:
+    -----------
+    series : pd.Series
+        Values to bound
+    lower : float
+        Minimum valid value (inclusive)
+    upper : float
+        Maximum valid value (inclusive)
+    name : str
+        Feature name for logging
+
+    Returns:
+    --------
+    pd.Series
+        Series with out-of-bounds values set to NaN
+    """
+    out_of_bounds = ((series < lower) | (series > upper)) & series.notna()
+    if out_of_bounds.any():
+        n_invalid = out_of_bounds.sum()
+        n_total = series.notna().sum()
+        pct = 100 * n_invalid / n_total if n_total > 0 else 0
+        _BOUNDS_STATS.append({
+            "feature": name,
+            "n_invalid": n_invalid,
+            "n_total": n_total,
+            "pct": pct,
+            "bounds": f"[{lower}, {upper}]"
+        })
+    return series.where(~out_of_bounds, np.nan)
+
+def _log_bounds_summary():
+    """Log summary of all domain bounds applied."""
+    if not _BOUNDS_STATS:
+        logger.info("No values outside domain bounds detected")
+        return
+
+    logger.info("Domain bounds summary: {} features had out-of-bounds values", len(_BOUNDS_STATS))
+    total_invalid = sum(s["n_invalid"] for s in _BOUNDS_STATS)
+    logger.info("Total values set to NaN: {:,}", total_invalid)
+
+    # Log top 5 features with most out-of-bounds values
+    sorted_stats = sorted(_BOUNDS_STATS, key=lambda x: x["n_invalid"], reverse=True)
+    for stat in sorted_stats[:5]:
+        logger.info(
+            "  {}: {:,} / {:,} ({:.2f}%) outside {}",
+            stat["feature"],
+            stat["n_invalid"],
+            stat["n_total"],
+            stat["pct"],
+            stat["bounds"]
+        )
+
+    # Clear stats for next run
+    _BOUNDS_STATS.clear()
 
 
 def _safe_pct_change(series: pd.Series) -> pd.Series:
@@ -169,6 +261,11 @@ def _rolling_drawdown(series: pd.Series, window: int) -> pd.Series:
 
 
 def _compute_cagr(series: pd.Series, periods: int) -> pd.Series:
+    """
+    Compute compound annual growth rate (CAGR) over N periods.
+
+    Returns decimal values: 0.05 = 5% annual growth, 1.0 = 100% annual growth
+    """
     shifted = series.groupby(level=0).shift(periods)
     ratio = _safe_div(series, shifted)
     mask = (series > 0) & (shifted > 0)
@@ -255,12 +352,23 @@ def create_engineered_features(
     financial_cost_net = df["rr09_finkostn"] - df["rr09d_jfrstfin"]
 
     new_features.update({
-        "ratio_depreciation_cost": _safe_div(
-            df["rr05_avskriv"], df["rr01_ntoms"]
+        # Depreciation cost ratio: [0, 1]
+        # Domain: Depreciation (rr05_avskriv) is negative (expense), so negate for positive ratio
+        #         Can't exceed 100% of revenue
+        "ratio_depreciation_cost": _apply_domain_bounds(
+            _safe_div(-df["rr05_avskriv"], df["rr01_ntoms"]),
+            lower=0.0,
+            upper=1.0,
+            name="ratio_depreciation_cost"
         ),
         # ratio_ebitda_margin removed via feature selection (Strategy 4)
-        "ratio_cash_interest_cov": _safe_div(
-            df["br07b_kabasu"], financial_cost_net
+        # Cash interest coverage: [-100, 1000]
+        # Domain: Companies rarely sustain >1000x coverage; <-100x indicates extreme distress
+        "ratio_cash_interest_cov": _apply_domain_bounds(
+            _safe_div(df["br07b_kabasu"], financial_cost_net),
+            lower=-100.0,
+            upper=1000.0,
+            name="ratio_cash_interest_cov"
         ),
     })
 
@@ -280,43 +388,108 @@ def create_engineered_features(
     total_debt = current_liabilities + longterm_liabilities
 
     new_features.update({
-        "ratio_cash_liquidity": _safe_div(
-            df["br07b_kabasu"] + df["br07a_kplacsu"],
-            current_liabilities,
+        # Cash liquidity ratio: [0, 100]
+        # Domain: Cash can't be negative (0 floor); >100x coverage extremely rare
+        "ratio_cash_liquidity": _apply_domain_bounds(
+            _safe_div(df["br07b_kabasu"] + df["br07a_kplacsu"], current_liabilities),
+            lower=0.0,
+            upper=100.0,
+            name="ratio_cash_liquidity"
         ),
-        "dso_days": _safe_div(df["br06g_kfordsu"], df["rr01_ntoms"]) * 365,
-        "inventory_days": _safe_div(df["br06c_lagersu"], df["rr06a_prodkos"]) * 365,  # Needed for inventory_days_yoy_diff
-        "dpo_days": _safe_div(df["br13a_ksklev"], df["rr06a_prodkos"]) * 365,
+        # DSO days: [-30, 730]
+        # Domain: Negative DSO <-30 days = data error; >2 years (730 days) = collection failure
+        "dso_days": _apply_domain_bounds(
+            _safe_div(df["br06g_kfordsu"], df["rr01_ntoms"]) * 365,
+            lower=-30.0,
+            upper=730.0,
+            name="dso_days"
+        ),
+        # Inventory days: [0, 1095]
+        # Domain: Production costs (rr06a_prodkos) are negative (expense), so negate for positive ratio
+        #         Inventory can't be negative; >3 years (1095 days) = obsolescence/error
+        "inventory_days": _apply_domain_bounds(
+            _safe_div(df["br06c_lagersu"], -df["rr06a_prodkos"]) * 365,
+            lower=0.0,
+            upper=1095.0,
+            name="inventory_days"
+        ),
+        # DPO days: [0, 730]
+        # Domain: Production costs (rr06a_prodkos) are negative (expense), so negate for positive ratio
+        #         Payables can't be negative; >2 years suggests unsustainable supplier terms
+        "dpo_days": _apply_domain_bounds(
+            _safe_div(df["br13a_ksklev"], -df["rr06a_prodkos"]) * 365,
+            lower=0.0,
+            upper=730.0,
+            name="dpo_days"
+        ),
         # current_ratio, ratio_nwc_sales removed via feature selection (Strategy 4)
     })
 
     logger.info("Computing capital structure and payout ratios")
     new_features.update({
-        "ratio_short_term_debt_share": _safe_div(current_liabilities, total_debt),
-        # ratio_secured_debt_assets removed via feature selection (Strategy 4)
-        "ratio_retained_earnings_equity": _safe_div(
-            df["br10e_balres"], df["br10_eksu"]
+        # Short-term debt share: [0, 1]
+        # Domain: Ratio of current to total debt; can't be negative or >100%
+        "ratio_short_term_debt_share": _apply_domain_bounds(
+            _safe_div(current_liabilities, total_debt),
+            lower=0.0,
+            upper=1.0,
+            name="ratio_short_term_debt_share"
         ),
-        "dividend_yield": _safe_div(df["rr00_utdbel"], df["br10_eksu"]),
+        # ratio_secured_debt_assets removed via feature selection (Strategy 4)
+        # Retained earnings / equity: [-10, 10]
+        # Domain: Can be negative (accumulated losses); extreme values (>1000%) indicate error
+        "ratio_retained_earnings_equity": _apply_domain_bounds(
+            _safe_div(df["br10e_balres"], df["br10_eksu"]),
+            lower=-10.0,
+            upper=10.0,
+            name="ratio_retained_earnings_equity"
+        ),
+        # Dividend yield: [0, 1]
+        # Domain: Dividends can't be negative; >100% of equity unsustainable
+        "dividend_yield": _apply_domain_bounds(
+            _safe_div(df["rr00_utdbel"], df["br10_eksu"]),
+            lower=0.0,
+            upper=1.0,
+            name="dividend_yield"
+        ),
     })
 
     # Compute current_ratio now (needed for YoY calculations later)
     # Must be computed before dropping BR columns
-    current_ratio_temp = _safe_div(df["br08_omstgsu"], current_liabilities)
+    # Current ratio: [0, 100]
+    # Domain: Can't be negative; >100x coverage extremely rare
+    current_ratio_temp = _apply_domain_bounds(
+        _safe_div(df["br08_omstgsu"], current_liabilities),
+        lower=0.0,
+        upper=100.0,
+        name="current_ratio_temp"
+    )
     new_features["current_ratio_temp"] = current_ratio_temp
 
     # Compute OCF and leverage features (needed for YoY/trend calculations even if not in final model)
     working_capital = df["br08_omstgsu"] - current_liabilities
     net_debt = total_debt - df["br07_kplackaba"]
+    ocf_proxy = ebitda - working_capital.groupby(level=0).diff()
 
     new_features.update({
-        # OCF features
-        "ocf_proxy": ebitda - working_capital.groupby(level=0).diff(),
-        "ratio_ocf_to_debt": _safe_div(
-            ebitda - working_capital.groupby(level=0).diff(), total_debt
+        # OCF proxy (no bounds needed - used for YoY/trend calculations)
+        "ocf_proxy": ocf_proxy,
+        # OCF to debt ratio: [-10, 10]
+        # Domain: Can be negative (cash outflow); >1000% suggests calculation error
+        "ratio_ocf_to_debt": _apply_domain_bounds(
+            _safe_div(ocf_proxy, total_debt),
+            lower=-10.0,
+            upper=10.0,
+            name="ratio_ocf_to_debt"
         ),
-        # Leverage metric
-        "net_debt_to_ebitda": _safe_div(net_debt, ebitda),
+        # Net debt to EBITDA: [-100, 100]
+        # Domain: Can be negative (net cash position); >100x suggests insolvency
+        "net_debt_to_ebitda": _apply_domain_bounds(
+            _safe_div(net_debt, ebitda),
+            lower=-100.0,
+            upper=100.0,
+            name="net_debt_to_ebitda"
+        ),
     })
 
     # Join basic ratios early so they can be used in trend calculations
@@ -335,30 +508,59 @@ def create_engineered_features(
     group = df.groupby(level=0, group_keys=False)
 
     logger.info("Computing year-over-year deltas and immediate trends")
+    # Operating result YoY % change: [-5, 10] (decimal form: -500% to 1000%)
+    # Domain: Extreme swings >1000% suggest calculation errors; <-500% = near-total collapse
     for col in ["rr07_rorresul"]:
-        new_features[f"{col}_yoy_pct"] = _safe_pct_change(df[col])
+        new_features[f"{col}_yoy_pct"] = _apply_domain_bounds(
+            _safe_pct_change(df[col]),
+            lower=-5.0,
+            upper=10.0,
+            name=f"{col}_yoy_pct"
+        )
+    # Revenue YoY absolute change (no bounds - used as is)
     for col in ["rr01_ntoms"]:
         new_features[f"{col}_yoy_abs"] = group[col].diff()
 
-    new_features.update(
-        {
-            "ny_solid_yoy_diff": group["ny_solid"].diff(),
-            # ny_skuldgrd_yoy_diff removed via feature selection (Strategy 4)
-            "ratio_cash_liquidity_yoy_pct": _safe_pct_change(df["ratio_cash_liquidity"]),
-            "ratio_cash_liquidity_yoy_abs": group["ratio_cash_liquidity"].diff(),
-            "dso_days_yoy_diff": group["dso_days"].diff(),
-            "current_ratio_yoy_pct": _safe_pct_change(df["current_ratio_temp"]),  # Keep YoY change only
-        }
-    )
+    new_features.update({
+        # Equity ratio YoY diff (no additional bounds - base feature is [0, 1])
+        "ny_solid_yoy_diff": group["ny_solid"].diff(),
+        # ny_skuldgrd_yoy_diff removed via feature selection (Strategy 4)
+        # Cash liquidity YoY % change: [-5, 10] (decimal: -500% to 1000%)
+        # Domain: Similar to operating result; extreme changes suggest calculation error
+        "ratio_cash_liquidity_yoy_pct": _apply_domain_bounds(
+            _safe_pct_change(df["ratio_cash_liquidity"]),
+            lower=-5.0,
+            upper=10.0,
+            name="ratio_cash_liquidity_yoy_pct"
+        ),
+        # Cash liquidity YoY absolute diff (no additional bounds - base bounded [0, 100])
+        "ratio_cash_liquidity_yoy_abs": group["ratio_cash_liquidity"].diff(),
+        # DSO days YoY diff (no additional bounds needed - base feature already bounded)
+        "dso_days_yoy_diff": group["dso_days"].diff(),
+        # Current ratio YoY % change: [-5, 10] (decimal: -500% to 1000%)
+        "current_ratio_yoy_pct": _apply_domain_bounds(
+            _safe_pct_change(df["current_ratio_temp"]),
+            lower=-5.0,
+            upper=10.0,
+            name="current_ratio_yoy_pct"
+        ),
+    })
 
-    # Compute CAGR features
-    # Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
-    # Removed: equity_cagr_3y
+    # Compute CAGR features (3-year)
+    # Revenue CAGR: [-0.9, 5.0] (decimal: -90% to 500% annual growth)
+    # Domain: CAGR of 5.0 = 500% annual = (1+5)^3 = 216x over 3y (extremely rare)
+    #         CAGR of -0.9 = -90% annual = near-total collapse
+    # Profit CAGR: [-0.95, 10.0] (decimal: -95% to 1000% annual growth)
+    # Domain: More volatile than revenue; CAGR of 10 = (1+10)^3 = 1331x over 3y (very rare)
     for source, target, window in [
         ("rr01_ntoms", "revenue_cagr_3y", 3),
         ("rr15_resar", "profit_cagr_3y", 3),
     ]:
-        new_features[target] = _compute_cagr(df[source], window)
+        cagr = _compute_cagr(df[source], window)
+        if "revenue" in target:
+            new_features[target] = _apply_domain_bounds(cagr, lower=-0.9, upper=5.0, name=target)
+        else:  # profit
+            new_features[target] = _apply_domain_bounds(cagr, lower=-0.95, upper=10.0, name=target)
 
     # Join trends and CAGR before computing rolling features that depend on them
     df = df.join(pd.DataFrame(new_features, index=df.index))
@@ -373,6 +575,7 @@ def create_engineered_features(
 
     # Working capital trends (3y) - early warning signals for operational deterioration
     new_features.update({
+        # Trend and YoY diffs don't need additional bounds - base features already bounded
         "dpo_days_trend_3y": _rolling_slope(df["dpo_days"], window=3),
         "inventory_days_yoy_diff": group["inventory_days"].diff(),
         "dpo_days_yoy_diff": group["dpo_days"].diff(),
@@ -489,6 +692,27 @@ def create_engineered_features(
 
     # Note: Raw rr_*/br_* columns (except KEPT_RAW_COLS) were already dropped after computing ratios
     # So drop_raw_sources parameter is now redundant, but we keep it for API compatibility
+
+    # Note: Categorical dtypes are already set in make_dataset.py
+    # They are preserved through parquet as dictionary<values=string>
+
+    # Log summary of domain bounds applied throughout feature engineering
+    _log_bounds_summary()
+
+    # Optimize data types for memory efficiency
+    logger.info("Optimizing data types for memory efficiency")
+
+    # event_count_last_5y: range [0, 5] fits in uint8
+    if 'event_count_last_5y' in df.columns:
+        df['event_count_last_5y'] = df['event_count_last_5y'].astype('uint8')
+        logger.debug("  Optimized event_count_last_5y: Int16 → uint8")
+
+    # Downcast float64 to float32 where precision not critical
+    float64_to_32 = ['revenue_drawdown_5y', 'dpo_days_trend_3y']
+    for col in float64_to_32:
+        if col in df.columns and df[col].dtype == 'float64':
+            df[col] = df[col].astype('float32')
+            logger.debug(f"  Optimized {col}: float64 → float32")
 
     logger.success("Feature engineering completed (rows={:,}, columns={})", len(df), df.shape[1])
 
