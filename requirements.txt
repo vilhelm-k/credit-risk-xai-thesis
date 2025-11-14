@@ -16,4 +16,6 @@ optuna
 mlflow
 shap
 matplotlib
+wandb
+seaborn
 -e .
