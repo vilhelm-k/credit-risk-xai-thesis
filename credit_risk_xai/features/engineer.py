@@ -428,15 +428,18 @@ def create_engineered_features(
     #         df["years_since_last_credit_event"].le(limit).fillna(False).astype("Int8")
     #     )
 
-    # df["event_count_total"] = group["credit_event"].cumsum().astype("Int16")  # REMOVED: Replaced with event_count_last_5y to prevent overfitting
-    df["event_count_last_5y"] = (
+    # Binary indicator: Any credit event in PAST 5 years (excludes current year to prevent data leakage)
+    # Lookback: years t-5, t-4, t-3, t-2, t-1 (NOT year t)
+    # This follows Basel III 5-year PD estimation window standard
+    # Binary (0/1) retains 100% of predictive signal vs count (companies with 2+ events all default)
+    df["any_event_last_5y"] = (
         group["credit_event"]
+        .shift(1)  # Shift by 1 to exclude current year (prevent data leakage)
         .rolling(window=5, min_periods=1)
         .sum()
-        .reset_index(level=0, drop=True)
-        .astype("Int16")
+        .gt(0)  # Convert to boolean: True if any event in window
+        .astype("Int8")  # 0 or 1
     )
-    # df["ever_failed"] = (df["event_count_total"] > 0).astype("Int8")  # REMOVED: Zero importance, redundant with event_count_total
 
     logger.info("Credit event history features computed")
 
@@ -496,10 +499,7 @@ def create_engineered_features(
     # Optimize data types for memory efficiency
     logger.info("Optimizing data types for memory efficiency")
 
-    # event_count_last_5y: range [0, 5] fits in uint8
-    if 'event_count_last_5y' in df.columns:
-        df['event_count_last_5y'] = df['event_count_last_5y'].astype('uint8')
-        logger.debug("  Optimized event_count_last_5y: Int16 → uint8")
+    # any_event_last_5y: binary (0/1) already as Int8 (optimal)
 
     # Downcast float64 to float32 where precision not critical
     float64_to_32 = ['revenue_drawdown_5y', 'dpo_days_trend_3y']

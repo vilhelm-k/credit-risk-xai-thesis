@@ -238,8 +238,10 @@ TEMPORAL_FEATURE_NAMES = [
 # These were not selected in the final 40-feature set (Strategy 4: Hybrid)
 
 # Credit event history
+# Binary indicator: any credit event in past 5 years (Basel III standard)
+# Excludes current year to prevent data leakage
 CRISIS_FEATURE_NAMES = [
-    "event_count_last_5y",   # Credit events in past 5 years
+    "any_event_last_5y",   # Binary: 1 if any credit event in past 5 years, else 0
 ]
 
 # Macroeconomic conditions
