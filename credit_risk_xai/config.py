@@ -349,7 +349,7 @@ FEATURE_GROUPS_BY_SOURCE = {
 # Only includes true categoricals that benefit from categorical encoding
 # Binary/ordinal columns kept as numeric for filtering (knc_kncfall, ser_aktiv, etc.)
 CATEGORICAL_COLS = [
-    "bransch_sni071_konv",       # Industry code (SNI): ~800 categories
+    "sni_group_3digit",          # Industry code (SNI 3-digit Group): ~267 categories (better generalization than 5-digit)
     "bransch_borsbransch_konv",  # Stock exchange industry: 13 categories
     "ser_laen",                  # County code: ~20 categories
     "sme_category",              # SME size category: 4 categories (Micro/Small/Medium/Large)
@@ -360,7 +360,7 @@ SME_CATEGORIES = ["Micro", "Small", "Medium", "Large"]
 BASE_MODEL_FEATURES = [
     # Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
     "company_age",
-    "bransch_sni071_konv",
+    "sni_group_3digit",  # Aggregated 3-digit SNI for better generalization
 ]
 
 FEATURES_FOR_MODEL = [

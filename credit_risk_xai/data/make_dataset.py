@@ -163,7 +163,7 @@ def generate_serrano_base(
         )
         # Optimize all data types in one place
         df = _optimize_dtypes(df)
-        
+
         # Ensure proper categorical with all possible categories
         df["sme_category"] = df["sme_category"].cat.set_categories(SME_CATEGORIES + ["Unknown"])
 
