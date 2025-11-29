@@ -305,7 +305,9 @@ def create_engineered_features(
     new_features.update({
         "ratio_short_term_debt_share": _safe_div(current_liabilities, total_debt),
         "ratio_retained_earnings_equity": _safe_div(df["br10e_balres"], df["br10_eksu"]),
-        "dividend_yield": _safe_div(df["rr00_utdbel"], df["br10_eksu"]),
+        # Binary: 1 if company pays dividend, 0 otherwise
+        # rr00_utdbel is negative when dividends are paid (outflow)
+        "dividend_yield": (df["rr00_utdbel"] > 0).astype("Int8"),
     })
 
     # Compute current_ratio now (needed for YoY calculations later)
@@ -482,6 +484,55 @@ def create_engineered_features(
     )
 
     logger.info("Macro indicators merged (including revenue beta)")
+
+    # -------------------------------------------------------------------------
+    # Remove duplicate accounting year observations (data leakage fix)
+    # -------------------------------------------------------------------------
+    # Detection rule: ny_omsf == 0 AND dso_days_yoy_diff == 0
+    #
+    # Background: Some companies with non-calendar fiscal years have duplicate
+    # accounting snapshots in consecutive Serrano years. This causes all YoY
+    # features to be exactly 0, which the model learns as a spurious "default
+    # signal" (Cluster 0 in SHAP analysis had 94% default rate, 44x enrichment).
+    #
+    # Fix: Transfer credit_event to the previous (valid) year, then remove
+    # the duplicate row. This preserves the default signal while eliminating
+    # the leaky "all YoY = 0" pattern.
+    # -------------------------------------------------------------------------
+    logger.info("Detecting and removing duplicate accounting year observations (data leakage fix)")
+
+    # Identify leaky observations: both revenue growth AND DSO change exactly 0
+    # This combination is virtually impossible for real year-over-year changes
+    leaky_mask = (df["ny_omsf"] == 0.0) & (df["dso_days_yoy_diff"] == 0.0)
+    n_leaky = leaky_mask.sum()
+
+    if n_leaky > 0:
+        logger.warning("Found {:,} duplicate accounting year observations to remove", n_leaky)
+
+        # Simply remove the duplicate rows. No need to transfer credit_event because:
+        #
+        # The data structure is: Year T-1 (valid) → Year T (duplicate) → Year T+1 (bankruptcy)
+        # - Year T has YoY features = 0 (because T's financials are copied from T-1)
+        # - Year T has target_next_year = 1 (because T+1 has credit_event = 1)
+        # - The credit_event = 1 is on Year T+1, NOT on Year T
+        #
+        # After removing Year T:
+        # - Year T-1 still exists with valid features
+        # - Year T+1 still exists with credit_event = 1
+        # - When we compute target_next_year via shift(-1), Year T-1 will correctly
+        #   get target_next_year = 1 (pointing to T+1's credit_event)
+        #
+        # The target "transfer" happens automatically via the shift operation!
+
+        # Remove all leaky rows
+        df = df[~leaky_mask].copy()
+        logger.success("Removed {:,} duplicate observations", n_leaky)
+    else:
+        logger.info("No duplicate accounting year observations detected")
+
+    # Reset index after filtering
+    df.reset_index(drop=True, inplace=True)
+    df.set_index(["ORGNR", "ser_year"], drop=False, inplace=True)
 
     # Computing target variable
     logger.info("Creating target variable for next-year credit events")

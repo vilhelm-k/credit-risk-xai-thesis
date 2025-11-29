@@ -153,8 +153,13 @@ def generate_serrano_base(
         # Compute derived features (using optimized dtypes)
         df["company_age"] = (df["ser_year"] - df["ser_regdat"].dt.year).astype("Int16")
 
-        # credit_event: Use Int8 (nullable) to handle NA values from bol_konkurs
-        credit_event_mask = (df["bol_konkurs"] == 1) | (df["bol_q80dat"].notna())
+        # credit_event: Binary indicator for credit distress events in THIS specific year
+        # - bol_konkurs == 1: Bankruptcy filed this year
+        # - bol_q80dat: Date of last reorganization (persists across years)
+        #   → Only flag as event if the YEAR of bol_q80dat matches ser_year
+        # This ensures we only mark the year when the event OCCURRED, not subsequent years
+        q80_year_matches = df["bol_q80dat"].dt.year == df["ser_year"]
+        credit_event_mask = (df["bol_konkurs"] == 1) | q80_year_matches
         df["credit_event"] = credit_event_mask.astype("Int8")
 
         # Vectorized SME classification (much faster than apply)

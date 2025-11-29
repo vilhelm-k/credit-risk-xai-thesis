@@ -1,0 +1,11 @@
+cluster,risk_level,enrichment,default_rate_pct,size,top_risk_features,top_protective_features
+6,High Risk,4.435875816993464,7.8100000000000005,5137,"ny_avkegkap, ny_skuldgrd","dpo_days, ny_solid_yoy_diff"
+7,High Risk,4.146209150326797,7.3,3439,"ny_skuldgrd, dividend_yield","ny_kapomsh, term_spread"
+2,Elevated Risk,2.5672418300653597,4.52,2346,"company_age, dividend_yield","ny_rs, rr01_ntoms_yoy_abs"
+3,Moderate Risk,0.9996339869281047,1.76,397,"ny_skuldgrd, company_age","term_spread, inventory_days_yoy_diff"
+0,Moderate Risk,0.8235620915032681,1.4500000000000002,7266,"ny_skuldgrd, dividend_yield","ny_avkegkap, ratio_depreciation_cost"
+8,Moderate Risk,0.721326797385621,1.27,5833,"dividend_yield, log_br07b_kabasu","ny_skuldgrd, company_age"
+1,Low Risk,0.6134117647058824,1.08,9195,"company_age, log_br07b_kabasu","dividend_yield, ny_rs"
+9,Very Low Risk,0.1419934640522876,0.25,3619,"ny_kapomsh, ratio_depreciation_cost","sni_group_3digit, dividend_yield"
+4,Very Low Risk,0.06815686274509804,0.12,10096,"sni_group_3digit, term_spread","log_br07b_kabasu, ny_skuldgrd"
+5,Very Low Risk,0.02839869281045752,0.05,13502,"sni_group_3digit, ratio_cash_interest_cov","dividend_yield, ny_skuldgrd"

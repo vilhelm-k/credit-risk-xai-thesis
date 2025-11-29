@@ -55,7 +55,9 @@ BASE_COLS = [
 ]
 
 NY_COLS = [
-    # Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
+    # Selected via comprehensive feature selection pipeline (29 features from 54)
+    # Optimized using VIF, Stability Selection, Boruta, SHAP, and RFECV (ROC-AUC)
+    # Manual additions: ny_omsf (YoY revenue growth - short-term momentum)
     "ny_kapomsh",
     "ny_rs",
     "ny_skuldgrd",
@@ -65,8 +67,7 @@ NY_COLS = [
     "ny_nettomarg",
     "ny_omspanst",
     "ny_foradlvpanst",
-    "ny_omsf",
-    "ny_anstf",
+    "ny_omsf",  # YoY change in net sales (short-term revenue momentum)
 ]
 
 KEPT_RAW_COLS = [
@@ -182,21 +183,19 @@ COLS_TO_LOAD = list(
 # -----------------------------------------------------------------------------
 
 # Log-transformed nominal values (reduce skewness, align with literature)
-# Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
+# Selected via comprehensive feature selection pipeline (29 features from 54)
+# Manual addition: log_br10_eksu (captures absolute equity size/buffer, complements equity ratio)
 LOG_NOMINAL_FEATURES = [
-    "log_br10_eksu",        # Total equity
     "log_br07b_kabasu",     # Cash and bank
-    "log_bslov_antanst",    # Number of employees
-    "log_rr15_resar",       # Net profit (NaN for negatives)
+    "log_br10_eksu",        # Total equity (size/buffer indicator)
 ]
 
 # Cost structure & profitability ratios
-# Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
+# Selected via comprehensive feature selection pipeline (28 features from 54)
 RATIO_FEATURE_NAMES = [
     "ratio_depreciation_cost",
     "ratio_cash_interest_cov",
     "ratio_cash_liquidity",
-    "ratio_short_term_debt_share",
     "ratio_retained_earnings_equity",
     "dividend_yield",
 ]
@@ -209,54 +208,42 @@ LIQUIDITY_EFFICIENCY_FEATURES = [
 ]
 
 # Year-over-year changes and trends
-# Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
+# Selected via comprehensive feature selection pipeline (29 features from 54)
+# Removed ratio_cash_liquidity_yoy_pct (kept absolute - better captures threshold crossings)
 TREND_FEATURE_NAMES = [
-    "rr01_ntoms_yoy_abs",
-    "rr07_rorresul_yoy_pct",
     "ny_solid_yoy_diff",
-    "ratio_cash_liquidity_yoy_pct",
-    "ratio_cash_liquidity_yoy_abs",
-    "dso_days_yoy_diff",
+    "ratio_cash_liquidity_yoy_abs",  # Absolute change in quick ratio (captures magnitude)
     "inventory_days_yoy_diff",
-    "dpo_days_yoy_diff",
-    "current_ratio_yoy_pct",
 ]
 
 # Multi-year temporal features
-# Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
+# Selected via comprehensive feature selection pipeline (29 features from 54)
 TEMPORAL_FEATURE_NAMES = [
     # Growth metrics (CAGR) - fundamental business momentum
     "revenue_cagr_3y",
     "profit_cagr_3y",
     # Risk metrics (drawdown) - downside exposure
     "revenue_drawdown_5y",
-    # Working capital trends - early warning signals
-    "dpo_days_trend_3y",
 ]
 
-# Note: OCF, Altman, and Leverage features removed via feature selection
-# These were not selected in the final 40-feature set (Strategy 4: Hybrid)
-
-# Credit event history
-# Binary indicator: any credit event in past 5 years (Basel III standard)
-# Excludes current year to prevent data leakage
-CRISIS_FEATURE_NAMES = [
-    "any_event_last_5y",   # Binary: 1 if any credit event in past 5 years, else 0
-]
+# Note: OCF, Leverage, and additional macro features removed via feature selection
+# Final selection: 29 features (28 from automated pipeline + 2 manual additions - 1 removal)
+# Manual additions: ny_omsf (YoY revenue), log_br10_eksu (equity size)
+# Manual removal: ratio_cash_liquidity_yoy_pct (kept absolute version)
 
 # Macroeconomic conditions
-# Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
+# Selected via comprehensive feature selection pipeline (29 features from 54)
 MACRO_FEATURE_NAMES = [
     "term_spread",           # Long-short rate spread
 ]
 
+# All engineered features for modeling (29 features total after selection)
 ENGINEERED_FEATURE_NAMES = (
     LOG_NOMINAL_FEATURES
     + RATIO_FEATURE_NAMES
     + LIQUIDITY_EFFICIENCY_FEATURES
     + TREND_FEATURE_NAMES
     + TEMPORAL_FEATURE_NAMES
-    + CRISIS_FEATURE_NAMES
     + MACRO_FEATURE_NAMES
 )
 
@@ -338,7 +325,6 @@ FEATURE_GROUPS_BY_SOURCE = {
     "WORKING_CAPITAL": WORKING_CAPITAL_FEATURES,
     "TRENDS": TREND_FEATURE_NAMES,
     "TEMPORAL": TEMPORAL_FEATURE_NAMES,
-    "CRISIS_HISTORY": CRISIS_FEATURE_NAMES,
     "MACRO": MACRO_FEATURE_NAMES,
     "OPERATIONAL": OPERATIONAL_FEATURES,
 }
@@ -360,9 +346,10 @@ CATEGORICAL_COLS = [
 SME_CATEGORIES = ["Micro", "Small", "Medium", "Large"]
 
 BASE_MODEL_FEATURES = [
-    # Selected via comprehensive feature selection pipeline (Strategy 4: Hybrid)
+    # Selected via comprehensive feature selection pipeline (29 features from 54)
     "company_age",
     "sni_group_3digit",  # Aggregated 3-digit SNI for better generalization
+    "ser_laen",          # County code (geographic effects)
 ]
 
 FEATURES_FOR_MODEL = [

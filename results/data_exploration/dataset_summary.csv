@@ -1,10 +1,10 @@
 Metric,Value
-Total Observations,"306,985"
-Number of Features,40
+Total Observations,"304,149"
+Number of Features,29
 Time Period,1998-2023
-Default Rate (%),2.12
-Imbalance Ratio,46.2:1
+Default Rate (%),1.76
+Imbalance Ratio,55.8:1
 Small SMEs (%),94.1
 Medium SMEs (%),5.9
-Features with Missing Data,36
-Avg Missing Rate (%),6.77
+Features with Missing Data,25
+Avg Missing Rate (%),6.26
