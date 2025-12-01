@@ -18,4 +18,8 @@ shap
 matplotlib
 wandb
 seaborn
+scipy
+umap-learn
+alibi
+optbinning
 -e .

@@ -231,12 +231,19 @@ def compute_shap_interaction_summary(shap_interaction_values, feature_names, top
 
 
 # ==============================================================================
-# ALE (ACCUMULATED LOCAL EFFECTS) PLOTS
+# ALE (ACCUMULATED LOCAL EFFECTS) PLOTS - Using alibi
 # ==============================================================================
 
-def compute_ale_1d(model, X, feature, grid_size=50, predict_fn=None, percentile_range=(5, 95)):
+from alibi.explainers import ALE
+
+
+def compute_ale_1d(model, X, feature, grid_size=50, predict_fn=None, percentile_range=(5, 95),
+                   target_class=1, min_bin_points=4):
     """
-    Compute 1D ALE plot for a given feature.
+    Compute 1D ALE plot for a given feature using alibi.
+
+    This is a wrapper around alibi's ALE implementation that maintains
+    backward compatibility with the original API.
 
     Parameters:
     -----------
@@ -246,124 +253,132 @@ def compute_ale_1d(model, X, feature, grid_size=50, predict_fn=None, percentile_
     feature : str
         Feature name to compute ALE for
     grid_size : int
-        Number of grid points (ignored for binary)
+        Number of grid points (not directly used by alibi, kept for compatibility)
     predict_fn : callable
-        Custom prediction function (default: model.predict_proba)
+        Custom prediction function. Should return array of shape (n_samples,) or (n_samples, n_classes).
+        For classification, alibi expects predict_proba output.
     percentile_range : tuple
-        (lower, upper) percentiles to focus ALE on (default: 5th-95th)
+        (lower, upper) percentiles to filter the output (default: 5th-95th)
+    target_class : int
+        For classification, which class to return ALE for (default: 1 for binary positive class)
+    min_bin_points : int
+        Minimum number of points per bin for alibi (default: 4)
 
     Returns:
     --------
-    tuple : (grid_centers, ale_cumsum, counts, percentile_bounds)
+    tuple : (grid_centers, ale_values, counts, percentile_bounds)
+        - grid_centers: Feature values at which ALE is computed
+        - ale_values: ALE effect values (centered)
+        - counts: Approximate bin counts (based on deciles)
+        - percentile_bounds: (lower_bound, upper_bound) for the feature
     """
+    # Get feature index
+    feature_names = X.columns.tolist()
+    feature_idx = feature_names.index(feature)
+
+    # Set up prediction function
+    # alibi expects predict_fn to return (n_samples, n_classes) for classification
+    # We wrap user-provided functions to ensure correct format
     if predict_fn is None:
-        predict_fn = lambda x: model.predict_proba(x)[:, 1]
-
-    X_work = X.copy()
-    feat_values = X_work[feature].dropna().values
-
-    # Check if binary/low cardinality
-    unique_vals = np.unique(feat_values)
-    is_binary = len(unique_vals) <= 3
-
-    if is_binary:
-        # Binary/categorical feature
-        unique_vals = np.sort(unique_vals)
-        grid = unique_vals
-
-        ale_values = []
-        counts_list = []
-
-        for i in range(len(grid)):
-            at_value = (X_work[feature] == grid[i]).sum()
-            counts_list.append(at_value)
-
-            if i == 0:
-                ale_values.append(0)
-            else:
-                X_sample = X_work.copy()
-
-                # Predict at current value
-                X_curr = X_sample.copy()
-                X_curr[feature] = grid[i]
-                pred_curr = predict_fn(X_curr).mean()
-
-                # Predict at previous value
-                X_prev = X_sample.copy()
-                X_prev[feature] = grid[i-1]
-                pred_prev = predict_fn(X_prev).mean()
-
-                ale_values.append(pred_curr - pred_prev)
-
-        ale_cumsum = np.cumsum(ale_values)
-        counts = np.array(counts_list)
-
-        # Center at weighted mean
-        if counts.sum() > 0:
-            weighted_mean = np.average(ale_cumsum, weights=counts)
-            ale_cumsum = ale_cumsum - weighted_mean
-
-        grid_centers = grid
-        percentile_bounds = (grid.min(), grid.max())
-
+        # Default: use model's predict_proba
+        alibi_predict_fn = lambda x: model.predict_proba(x)
     else:
-        # Continuous feature
-        p_lower, p_upper = percentile_range
-        lower_bound = np.percentile(feat_values, p_lower)
-        upper_bound = np.percentile(feat_values, p_upper)
+        # Check if user's predict_fn returns 1D or 2D
+        # We'll wrap it to always return 2D for alibi
+        def alibi_predict_fn(x):
+            result = predict_fn(x)
+            if result.ndim == 1:
+                # User returned 1D (e.g., just positive class probs)
+                # Convert to 2D: [1-p, p] format for binary classification
+                return np.column_stack([1 - result, result])
+            return result
 
-        interpretable_values = feat_values[
-            (feat_values >= lower_bound) & (feat_values <= upper_bound)
-        ]
+    # Create alibi ALE explainer
+    ale_explainer = ALE(alibi_predict_fn, feature_names=feature_names)
 
-        # Create quantile-based grid
-        quantiles = np.linspace(0, 1, grid_size + 1)
-        grid = np.quantile(interpretable_values, quantiles)
-        grid = np.unique(grid)
+    # Compute ALE - alibi expects numpy array
+    X_array = X.values.astype(np.float64)
+    explanation = ale_explainer.explain(X_array, min_bin_points=min_bin_points)
 
-        ale_values = np.zeros(len(grid) - 1)
-        counts = np.zeros(len(grid) - 1)
+    # Extract results for this feature
+    feature_values = explanation.data['feature_values'][feature_idx]
+    ale_values_raw = explanation.data['ale_values'][feature_idx]
 
-        # Compute local effects for each interval
-        for i in range(len(grid) - 1):
-            in_interval = (X_work[feature] >= grid[i]) & (X_work[feature] < grid[i + 1])
+    # For classification, ale_values has shape (n_bins, n_classes)
+    # Select the target class (default: positive class = 1)
+    if ale_values_raw.ndim == 2:
+        ale_values = ale_values_raw[:, target_class]
+    else:
+        ale_values = ale_values_raw
 
-            if in_interval.sum() == 0:
+    # Apply percentile filtering
+    p_lower, p_upper = percentile_range
+    feat_original = X[feature].dropna().values
+    lower_bound = np.percentile(feat_original, p_lower)
+    upper_bound = np.percentile(feat_original, p_upper)
+
+    # Filter to percentile range
+    mask = (feature_values >= lower_bound) & (feature_values <= upper_bound)
+    grid_centers = feature_values[mask]
+    ale_filtered = ale_values[mask]
+
+    # Approximate counts from deciles (alibi doesn't return exact counts)
+    # Use feature_deciles to estimate distribution
+    deciles = explanation.data['feature_deciles'][feature_idx]
+    counts = np.ones(len(grid_centers)) * (len(X) / len(deciles))  # Approximate
+
+    return grid_centers, ale_filtered, counts, (lower_bound, upper_bound)
+
+
+def compute_ale_for_models(models_dict, X, features, percentile_range=(5, 95), min_bin_points=4):
+    """
+    Compute ALE for multiple models on the same features.
+
+    Parameters:
+    -----------
+    models_dict : dict
+        Dictionary of {model_name: (model, predict_fn)}
+        where predict_fn takes X and returns probabilities
+    X : pd.DataFrame
+        Input features (same for all models, in raw/untransformed space)
+    features : list
+        List of feature names to compute ALE for
+    percentile_range : tuple
+        Percentile range for filtering
+    min_bin_points : int
+        Minimum points per bin
+
+    Returns:
+    --------
+    dict : {feature: {model_name: {'grid': array, 'ale': array, 'bounds': tuple}}}
+    """
+    ale_results = {}
+
+    for feature in features:
+        ale_results[feature] = {}
+
+        for model_name, (model, predict_fn) in models_dict.items():
+            try:
+                grid, ale, counts, bounds = compute_ale_1d(
+                    model=model,
+                    X=X,
+                    feature=feature,
+                    predict_fn=predict_fn,
+                    percentile_range=percentile_range,
+                    min_bin_points=min_bin_points
+                )
+
+                ale_results[feature][model_name] = {
+                    'grid': grid,
+                    'ale': ale,
+                    'counts': counts,
+                    'bounds': bounds
+                }
+            except Exception as e:
+                print(f"  Warning: Failed to compute ALE for {feature} with {model_name}: {e}")
                 continue
 
-            X_interval = X_work[in_interval].copy()
-
-            # Predict at lower bound
-            X_lower = X_interval.copy()
-            X_lower[feature] = grid[i]
-            pred_lower = predict_fn(X_lower)
-
-            # Predict at upper bound
-            X_upper = X_interval.copy()
-            X_upper[feature] = grid[i + 1]
-            pred_upper = predict_fn(X_upper)
-
-            # Local effect
-            ale_values[i] = (pred_upper - pred_lower).mean()
-            counts[i] = in_interval.sum()
-
-        # Accumulate effects
-        ale_cumsum = np.cumsum(ale_values)
-
-        # Center ALE (mean = 0)
-        valid_counts = counts[counts > 0]
-        valid_ale = ale_cumsum[counts > 0]
-
-        if len(valid_counts) > 0:
-            ale_cumsum = ale_cumsum - np.average(valid_ale, weights=valid_counts)
-        else:
-            ale_cumsum = np.zeros_like(ale_cumsum)
-
-        # Grid centers for plotting
-        grid_centers = (grid[:-1] + grid[1:]) / 2
-        percentile_bounds = (lower_bound, upper_bound)
-
-    return grid_centers, ale_cumsum, counts, percentile_bounds
+    return ale_results
 
 
 # ==============================================================================

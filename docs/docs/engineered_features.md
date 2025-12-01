@@ -34,7 +34,7 @@ This document summarizes the **29 final features** selected via comprehensive fe
 - `ny_skuldgrd` - Debt ratio (total liabilities/total assets)
 - `ny_solid` - Equity ratio (equity/total assets)
 - `ny_avkegkap` - Return on equity (ROE)
-- `ny_kasslikv` - Cash liquidity ratio
+- `ny_kasslikv` - Quick ratio ((current assets - inventories) / current liabilities)
 - `ny_nettomarg` - Net profit margin
 - `ny_omspanst` - Revenue per employee
 - `ny_omsf` - YoY change in net sales (short-term revenue momentum) [Manual addition]
@@ -46,7 +46,7 @@ This document summarizes the **29 final features** selected via comprehensive fe
 ### Engineered Ratio Features (5)
 - `ratio_depreciation_cost` - Depreciation intensity (depreciation/revenue)
 - `ratio_cash_interest_cov` - Cash interest coverage (cash/financial costs)
-- `ratio_cash_liquidity` - Quick ratio ((cash + receivables)/current liabilities)
+- `ratio_cash_liquidity` - Cash ratio ((cash + short-term investments) / current liabilities)
 - `ratio_retained_earnings_equity` - Retained earnings composition of equity
 - `dividend_yield` - Dividends relative to equity
 
@@ -56,7 +56,7 @@ This document summarizes the **29 final features** selected via comprehensive fe
 
 ### Year-over-Year Trends (3)
 - `ny_solid_yoy_diff` - YoY change in equity ratio
-- `ratio_cash_liquidity_yoy_abs` - Absolute YoY change in quick ratio
+- `ratio_cash_liquidity_yoy_abs` - Absolute YoY change in cash ratio
 - `inventory_days_yoy_diff` - YoY change in inventory turnover days
 
 ### Multi-Year Temporal Features (3)
@@ -197,7 +197,7 @@ Standard Swedish financial ratios provided in the Serrano database.
 | `ny_skuldgrd` | Total liabilities / Total assets | Leverage (debt ratio) |
 | `ny_solid` | Equity / Total assets | Solvency (equity ratio) |
 | `ny_avkegkap` | Profit / Equity | Return on equity (ROE) |
-| `ny_kasslikv` | (Cash + receivables) / Current liabilities | Cash liquidity ratio |
+| `ny_kasslikv` | (Current assets - Inventories) / Current liabilities | Quick ratio (acid-test) |
 | `ny_nettomarg` | Net profit / Revenue | Net profit margin |
 | `ny_omspanst` | Revenue / Employees | Revenue per employee |
 | `ny_omsf` | YoY change in net sales | Short-term revenue momentum (manual addition) |
@@ -210,7 +210,7 @@ Custom ratios designed for credit risk assessment.
 | --- | --- | --- |
 | `ratio_depreciation_cost` | `rr05_avskriv / rr01_ntoms` | Depreciation intensity; proxy for capital intensity |
 | `ratio_cash_interest_cov` | `br07b_kabasu / (rr09_finkostn - rr09d_jfrstfin)` | Cash-on-hand relative to annual financial costs |
-| `ratio_cash_liquidity` | `(br07b_kabasu + br07a_kplacsu) / br13_ksksu` | Quick ratio |
+| `ratio_cash_liquidity` | `(br07b_kabasu + br07a_kplacsu) / br13_ksksu` | Cash ratio (most liquid assets only) |
 | `ratio_retained_earnings_equity` | `br10e_balres / br10_eksu` | Retained earnings composition of equity |
 | `dividend_yield` | `rr00_utdbel / br10_eksu` | Dividends relative to equity |
 
@@ -226,10 +226,10 @@ Custom ratios designed for credit risk assessment.
 | Feature | Definition | Purpose |
 | --- | --- | --- |
 | `ny_solid_yoy_diff` | YoY difference in equity ratio | Capital structure drift |
-| `ratio_cash_liquidity_yoy_abs` | Absolute YoY change in quick ratio | Liquidity trend magnitude (manual choice over %) |
+| `ratio_cash_liquidity_yoy_abs` | Absolute YoY change in cash ratio | Liquidity trend magnitude (manual choice over %) |
 | `inventory_days_yoy_diff` | YoY difference in inventory days | Working capital efficiency trend |
 
-**Note**: Absolute change in quick ratio preferred over percentage change because it better captures threshold crossings (e.g., moving from 0.8 to 1.0 is critical).
+**Note**: Absolute change in cash ratio preferred over percentage change because it better captures threshold crossings (e.g., moving from 0.8 to 1.0 is critical).
 
 ### Multi-Year Temporal Features
 
