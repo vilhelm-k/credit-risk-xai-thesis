@@ -32,17 +32,26 @@ from credit_risk_xai.modeling.utils import split_train_validation
 from wandb.sdk.wandb_run import Run
 
 DEFAULT_PARAMS: Dict[str, Any] = {
+    # Core settings
     "objective": "binary",
     "n_estimators": 10_000,
-    "learning_rate": 0.05,
-    "num_leaves": 31,
-    "subsample": 0.8,
-    "colsample_bytree": 0.8,
+    "metric": "logloss",
     "random_state": 42,
     "n_jobs": -1,
     "verbosity": -1,
     "is_unbalance": False,
-    "metric": "logloss",
+    # Tuned hyperparameters (Optuna, 2024-12-01, Log Loss: 0.0644, ROC-AUC: 0.8990)
+    "learning_rate": 0.0567,
+    "num_leaves": 214,
+    "max_depth": 6,
+    "min_child_samples": 97,
+    "min_child_weight": 0.308,
+    "reg_alpha": 4.764,
+    "reg_lambda": 9.83e-05,
+    "min_split_gain": 0.846,
+    "subsample": 0.826,
+    "subsample_freq": 3,
+    "colsample_bytree": 0.505,
 }
 
 
