@@ -179,7 +179,7 @@ COLS_TO_LOAD = list(
 )
 
 # -----------------------------------------------------------------------------
-# Engineered feature registries
+# Engineered feature registries (ORIGINAL feature set)
 # -----------------------------------------------------------------------------
 
 # Log-transformed nominal values (reduce skewness, align with literature)
@@ -246,6 +246,73 @@ ENGINEERED_FEATURE_NAMES = (
     + TEMPORAL_FEATURE_NAMES
     + MACRO_FEATURE_NAMES
 )
+
+# -----------------------------------------------------------------------------
+# MIGRATED feature set (Altman/Ohlson aligned)
+# -----------------------------------------------------------------------------
+# Based on literature alignment with Altman Z-score and Ohlson O-score models
+# See migration table for detailed rationale
+
+# Log-transformed size measure (Ohlson W - firm size)
+LOG_NOMINAL_FEATURES_V2 = [
+    "log_total_assets",     # Ohlson's Size (W) - replaces log_br07b_kabasu
+]
+
+# Core financial ratios aligned with Altman/Ohlson
+RATIO_FEATURE_NAMES_V2 = [
+    "working_capital_ta",           # Altman X1: (CA - CL) / TA
+    "retained_earnings_ta",         # Altman X2: RE / TA (migrated from RE/Equity)
+    "interest_coverage",            # EBIT / Interest Expense (migrated from cash coverage)
+    "ratio_cash_liquidity",         # Cash / Current Liabilities (kept - pure liquidity)
+    "gross_margin",                 # (Sales - COGS) / Sales (new)
+    "dividend_yield",               # Binary dividend payer (kept - top predictor)
+]
+
+# Working capital efficiency (kept)
+LIQUIDITY_EFFICIENCY_FEATURES_V2 = [
+    "dso_days",         # Days sales outstanding
+    "dpo_days",         # Days payables outstanding
+]
+
+# Temporal/volatility features
+TEMPORAL_FEATURE_NAMES_V2 = [
+    "revenue_cagr_3y",              # Revenue CAGR (3Y) - kept
+    "revenue_drawdown_5y",          # Revenue Drawdown (5Y) - kept (better than StdDev)
+    "ebitda_volatility",            # StdDev(EBITDA_3y) / TA (new - operational risk)
+]
+
+# Macroeconomic conditions (kept)
+MACRO_FEATURE_NAMES_V2 = [
+    "term_spread",           # Long-short rate spread
+]
+
+# All migrated engineered features
+ENGINEERED_FEATURE_NAMES_V2 = (
+    LOG_NOMINAL_FEATURES_V2
+    + RATIO_FEATURE_NAMES_V2
+    + LIQUIDITY_EFFICIENCY_FEATURES_V2
+    + TEMPORAL_FEATURE_NAMES_V2
+    + MACRO_FEATURE_NAMES_V2
+)
+
+# Nyckeltal ratios for V2 (kept features only, renamed where needed)
+NY_COLS_V2 = [
+    "ny_kapomsh",       # Asset Turnover (Altman X5) - renamed from "Capital Turnover"
+    "ny_skuldgrd",      # Debt Ratio (Ohlson TL/TA)
+    "ny_solid",         # Equity Ratio
+    "ny_avkegkap",      # Return on Equity
+    "ny_kasslikv",      # Quick Ratio
+    "ny_nettomarg",     # Net Profit Margin
+    "ny_omsf",          # Revenue Growth (YoY)
+]
+
+# Dropped from V2 (with rationale):
+# - ny_rs: Interest Rate on Debt - noisy, replaced by Interest Coverage
+# - ny_foradlvpanst: Value Added per Employee - redundant with margins
+# - ny_omspanst: Revenue per Employee - proxy for industry (already have SNI)
+# - log_br10_eksu: Log Total Equity - undefined for negative equity, redundant
+# - profit_cagr_3y: Invalid when profits cross zero
+# - YoY delta ratios: Levels matter more than changes per analysis
 
 # -----------------------------------------------------------------------------
 # Feature groupings by financial statement source (for correlation analysis)
@@ -352,7 +419,219 @@ BASE_MODEL_FEATURES = [
     "ser_laen",          # County code (geographic effects)
 ]
 
+# V2 base features (same as V1)
+BASE_MODEL_FEATURES_V2 = [
+    "company_age",
+    "sni_group_3digit",
+]
+
 FEATURES_FOR_MODEL = [
     f for f in list(dict.fromkeys(BASE_MODEL_FEATURES + NY_COLS + KEPT_RAW_COLS + ENGINEERED_FEATURE_NAMES))
     if f not in EXCLUDED_RAW_COLS
 ]
+
+# V2 feature list (Altman/Ohlson aligned)
+FEATURES_FOR_MODEL_V2 = list(dict.fromkeys(
+    BASE_MODEL_FEATURES_V2 + NY_COLS_V2 + ENGINEERED_FEATURE_NAMES_V2
+))
+
+# -----------------------------------------------------------------------------
+# Feature Name Maps (human-readable names for tables/figures)
+# -----------------------------------------------------------------------------
+
+# Original feature set name mapping
+FEATURE_NAME_MAP = {
+    # Base Features (3)
+    'company_age': 'Company Age',
+    'sni_group_3digit': 'Industry (SNI)',
+    'ser_laen': 'County',
+    # Nyckeltal Ratios (10)
+    'ny_foradlvpanst': 'Value Added per Employee',
+    'ny_kapomsh': 'Capital Turnover',
+    'ny_rs': 'Interest Rate on Debt',
+    'ny_skuldgrd': 'Debt Ratio',
+    'ny_solid': 'Equity Ratio',
+    'ny_avkegkap': 'Return on Equity',
+    'ny_kasslikv': 'Quick Ratio',
+    'ny_nettomarg': 'Net Profit Margin',
+    'ny_omspanst': 'Revenue per Employee',
+    'ny_omsf': 'Revenue Growth (YoY)',
+    # Log-Transformed Nominal Features (2)
+    'log_br07b_kabasu': 'Log Cash & Bank',
+    'log_br10_eksu': 'Log Total Equity',
+    # Engineered Ratio Features (5)
+    'ratio_depreciation_cost': 'Depreciation Intensity',
+    'ratio_cash_interest_cov': 'Cash Interest Coverage',
+    'ratio_cash_liquidity': 'Cash Ratio',
+    'ratio_retained_earnings_equity': 'Retained Earnings / Equity',
+    'dividend_yield': 'Dividend Payer',
+    # Working Capital Efficiency (2)
+    'dso_days': 'Days Sales Outstanding',
+    'dpo_days': 'Days Payables Outstanding',
+    # Year-over-Year Trends (3)
+    'ny_solid_yoy_diff': 'Equity Ratio Δ (YoY)',
+    'ratio_cash_liquidity_yoy_abs': 'Cash Ratio Δ (YoY)',
+    'inventory_days_yoy_diff': 'Inventory Days Δ (YoY)',
+    # Multi-Year Temporal Features (3)
+    'revenue_cagr_3y': 'Revenue CAGR (3Y)',
+    'profit_cagr_3y': 'Profit CAGR (3Y)',
+    'revenue_drawdown_5y': 'Revenue Drawdown (5Y)',
+    # Macroeconomic Conditions (1)
+    'term_spread': 'Term Spread',
+}
+
+# V2 (Altman/Ohlson aligned) feature set name mapping
+FEATURE_NAME_MAP_V2 = {
+    # Base Features (3)
+    'company_age': 'Company Age',
+    'sni_group_3digit': 'Industry (SNI)',
+    # Nyckeltal Ratios - Kept (7)
+    'ny_kapomsh': 'Total Asset Turnover',  # Renamed: Altman X5
+    'ny_skuldgrd': 'Debt Ratio',           # Ohlson TL/TA
+    'ny_solid': 'Equity Ratio',
+    'ny_avkegkap': 'Return on Equity',
+    'ny_kasslikv': 'Quick Ratio',
+    'ny_nettomarg': 'Net Profit Margin',
+    'ny_omsf': 'Revenue Growth (YoY)',
+    # Log-Transformed Size (1)
+    'log_total_assets': 'Log Total Assets',  # Ohlson Size (W)
+    # Altman/Ohlson Aligned Ratios (5)
+    'working_capital_ta': 'Working Capital / TA',      # Altman X1
+    'retained_earnings_ta': 'Retained Earnings / TA',  # Altman X2
+    'interest_coverage': 'Interest Coverage',          # EBIT / Interest
+    'ratio_cash_liquidity': 'Cash Ratio',
+    'gross_margin': 'Gross Margin',
+    'dividend_yield': 'Dividend Payer',
+    # Working Capital Efficiency (2)
+    'dso_days': 'Days Sales Outstanding',
+    'dpo_days': 'Days Payables Outstanding',
+    # Temporal Features (3)
+    'revenue_cagr_3y': 'Revenue CAGR (3Y)',
+    'revenue_drawdown_5y': 'Revenue Drawdown (5Y)',
+    'ebitda_volatility': 'EBITDA Volatility (3Y)',
+    # Macroeconomic Conditions (1)
+    'term_spread': 'Term Spread',
+}
+
+# -----------------------------------------------------------------------------
+# Model Version Selection (plug-and-play configuration)
+# -----------------------------------------------------------------------------
+# Set ACTIVE_MODEL_VERSION to switch between feature sets across all notebooks
+# Valid values: "v1" (original), "v2" (Altman/Ohlson aligned)
+
+ACTIVE_MODEL_VERSION = "v2"  # Change this to "v2" to use migrated features
+
+def get_active_features():
+    """Get the feature list for the active model version."""
+    if ACTIVE_MODEL_VERSION == "v2":
+        return FEATURES_FOR_MODEL_V2
+    return FEATURES_FOR_MODEL
+
+def get_active_feature_name_map():
+    """Get the feature name map for the active model version."""
+    if ACTIVE_MODEL_VERSION == "v2":
+        return FEATURE_NAME_MAP_V2
+    return FEATURE_NAME_MAP
+
+def get_display_name(feature: str) -> str:
+    """Get human-readable display name for a feature."""
+    name_map = get_active_feature_name_map()
+    return name_map.get(feature, feature)
+
+def get_ale_filename(feature: str) -> str:
+    """Auto-generate ALE plot filename from feature name."""
+    display_name = get_display_name(feature)
+    # Convert to lowercase, replace spaces/special chars with underscores
+    clean_name = display_name.lower()
+    clean_name = clean_name.replace(' ', '_').replace('/', '_').replace('(', '').replace(')', '')
+    clean_name = clean_name.replace('δ', 'delta').replace('%', 'pct')
+    # Remove consecutive underscores
+    while '__' in clean_name:
+        clean_name = clean_name.replace('__', '_')
+    return f"ale_{clean_name}.pdf"
+
+# Convenience exports for active model
+ACTIVE_FEATURES = get_active_features()
+ACTIVE_FEATURE_NAME_MAP = get_active_feature_name_map()
+
+# -----------------------------------------------------------------------------
+# Feature Bounds for ALE Plots
+# -----------------------------------------------------------------------------
+# Domain-appropriate bounds for ALE visualization
+# Based on descriptive statistics (P1-P99) and domain knowledge
+# None = binary feature (handled separately in ALE plotting)
+
+FEATURE_BOUNDS = {
+    # =========================================================================
+    # BASE FEATURES
+    # =========================================================================
+    'company_age': (0, 50),         # 0-50 years covers vast majority; 95th percentile is 44
+
+    # =========================================================================
+    # NYCKELTAL RATIOS (used by both V1 and V2)
+    # =========================================================================
+    'ny_kapomsh': (0.5, 8),         # Capital/Asset turnover: 0.5-8x is typical operating range
+    'ny_rs': (0, 0.1),              # Interest rate on debt: 0-10% is typical
+    'ny_skuldgrd': (0, 20),         # Debt ratio: 0-20 covers P95; higher values are extreme leverage
+    'ny_solid': (0, 0.8),           # Equity ratio: 0-80% (P95=0.74)
+    'ny_avkegkap': (-1, 1.5),       # ROE: -100% to +150% is economically meaningful
+    'ny_kasslikv': (0.2, 4),        # Quick ratio: 0.2-4 covers normal operating range
+    'ny_nettomarg': (-0.5, 0.35),   # Net margin: -50% to +35% covers P1-P99
+    'ny_omspanst': (100, 6000),     # Revenue per employee (kSEK): 100-6000 typical range
+    'ny_foradlvpanst': (100, 1500), # Value added per employee: 100-1500 kSEK
+    'ny_omsf': (-0.3, 2),           # Revenue growth YoY: -30% to +200%
+
+    # =========================================================================
+    # V1 LOG-TRANSFORMED NOMINAL FEATURES
+    # =========================================================================
+    'log_br07b_kabasu': (0, 10),    # Log cash: 0-10 corresponds to 0 to ~22M kSEK
+    'log_br10_eksu': (4, 10),       # Log equity: 4-10 corresponds to ~55 to ~22M kSEK
+
+    # =========================================================================
+    # V2 LOG-TRANSFORMED NOMINAL FEATURES
+    # =========================================================================
+    'log_total_assets': (6, 12),    # Log total assets: P1=6.5, P99=12.4; ~700 kSEK to ~160M kSEK
+
+    # =========================================================================
+    # V1 ENGINEERED RATIO FEATURES
+    # =========================================================================
+    'ratio_depreciation_cost': (0, 0.15),       # Depreciation as % of revenue: 0-15%
+    'ratio_cash_interest_cov': (-2000, 0),      # Cash/interest costs (negative = paying more)
+    'ratio_cash_liquidity': (0, 3),             # Cash ratio: 0-3
+    'ratio_retained_earnings_equity': (-1, 1.5),# Retained earnings/equity: -100% to +150%
+    'dividend_yield': None,                     # BINARY: handled separately
+
+    # =========================================================================
+    # V2 ALTMAN/OHLSON ALIGNED RATIOS
+    # =========================================================================
+    'working_capital_ta': (-0.6, 0.8),   # Altman X1: P1=-0.61, P99=0.83; typical -60% to +80%
+    'retained_earnings_ta': (-0.5, 0.8), # Altman X2: P1=-0.44, P99=0.79; typical -50% to +80%
+    'interest_coverage': (-50, 100),     # EBIT/Interest: P5=-23, P75=48; negative = loss
+    'gross_margin': (0, 1),              # (Sales-COGS)/Sales: P5=0.10, P99=0.96; 0-100%
+    'ebitda_volatility': (0, 0.6),       # StdDev(EBITDA)/TA: P1=0.003, P99=0.59; 0-60%
+
+    # =========================================================================
+    # WORKING CAPITAL EFFICIENCY (both versions)
+    # =========================================================================
+    'dso_days': (5, 150),           # Days sales outstanding: 5-150 days
+    'dpo_days': (5, 120),           # Days payables outstanding: 5-120 days
+
+    # =========================================================================
+    # V1 YEAR-OVER-YEAR TRENDS
+    # =========================================================================
+    'ny_solid_yoy_diff': (-0.2, 0.2),           # YoY equity ratio change: ±20pp
+    'ratio_cash_liquidity_yoy_abs': (-1, 1),    # YoY cash ratio change (absolute)
+    'inventory_days_yoy_diff': (-50, 50),       # YoY inventory days change
+
+    # =========================================================================
+    # MULTI-YEAR TEMPORAL FEATURES (both versions)
+    # =========================================================================
+    'revenue_cagr_3y': (-0.2, 1),    # 3-year revenue CAGR: -20% to +100%
+    'profit_cagr_3y': (-0.8, 3),     # 3-year profit CAGR: -80% to +300% (V1 only)
+    'revenue_drawdown_5y': (-0.6, 0),# Revenue drawdown: -60% to 0%
+
+    # =========================================================================
+    # MACROECONOMIC (both versions)
+    # =========================================================================
+    'term_spread': (-0.7, 1.7),     # Yield curve spread (uses full data range)
+}

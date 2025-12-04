@@ -269,6 +269,10 @@ def create_engineered_features(
         if col in df.columns:
             new_features[f"log_{col}"] = _safe_log(df[col]).astype("float32")
 
+    # V2 Feature: Log Total Assets (Ohlson's Size W)
+    # Replaces log_br07b_kabasu for size measure - more stable than cash
+    new_features["log_total_assets"] = _safe_log(df["br09_tillgsu"]).astype("float32")
+
     logger.info("Computing cost structure and profitability ratios")
     # Compute intermediate values once
     ebitda = df["rr07_rorresul"] + df["rr05_avskriv"]
@@ -278,6 +282,21 @@ def create_engineered_features(
         "ratio_depreciation_cost": _safe_div(-df["rr05_avskriv"], df["rr01_ntoms"]),
         "ratio_cash_interest_cov": _safe_div(df["br07b_kabasu"], financial_cost_net),
     })
+
+    # V2 Feature: Gross Margin = (Sales - COGS) / Sales
+    # Captures fundamental business model viability before overheads
+    # rr06a_prodkos is negative (cost), so we add it
+    new_features["gross_margin"] = _safe_div(
+        df["rr01_ntoms"] + df["rr06a_prodkos"],  # Sales - COGS (prodkos is negative)
+        df["rr01_ntoms"]
+    )
+
+    # V2 Feature: Interest Coverage = EBIT / Interest Expense
+    # Standard coverage ratio - ability to pay from earnings, not savings
+    # rr09_finkostn is financial costs (negative), so negate it
+    # EBIT = Operating profit (rr07_rorresul)
+    interest_expense = -df["rr09_finkostn"]  # Make positive for denominator
+    new_features["interest_coverage"] = _safe_div(df["rr07_rorresul"], interest_expense)
 
     logger.info("Computing liquidity and working-capital efficiencies")
     # Compute current liabilities total (sum of subcategories)
@@ -301,6 +320,16 @@ def create_engineered_features(
         "dpo_days": _safe_div(df["br13a_ksklev"], -df["rr06a_prodkos"]) * 365,
     })
 
+    # V2 Feature: Working Capital / Total Assets (Altman X1)
+    # Most famous bankruptcy ratio - measures short-term liquidity relative to size
+    working_capital = df["br08_omstgsu"] - current_liabilities
+    new_features["working_capital_ta"] = _safe_div(working_capital, df["br09_tillgsu"])
+
+    # V2 Feature: Retained Earnings / Total Assets (Altman X2)
+    # Measures cumulative profitability - migrated from RE/Equity (more stable denominator)
+    # br10e_balres = Retained earnings (accumulated)
+    new_features["retained_earnings_ta"] = _safe_div(df["br10e_balres"], df["br09_tillgsu"])
+
     logger.info("Computing capital structure and payout ratios")
     new_features.update({
         "ratio_short_term_debt_share": _safe_div(current_liabilities, total_debt),
@@ -323,6 +352,8 @@ def create_engineered_features(
         "ocf_proxy": ocf_proxy,
         "ratio_ocf_to_debt": _safe_div(ocf_proxy, total_debt),
         "net_debt_to_ebitda": _safe_div(net_debt, ebitda),
+        # Store EBITDA for later use in volatility calculation (V2 feature)
+        "_ebitda_temp": ebitda,
     })
 
     # Join basic ratios early so they can be used in trend calculations
@@ -381,6 +412,12 @@ def create_engineered_features(
         # Risk metrics (drawdown) - capture downside exposure
         "revenue_drawdown_5y": _rolling_drawdown(df["rr01_ntoms"], window=5),
     })
+
+    # V2 Feature: EBITDA Volatility (3Y) = StdDev(EBITDA_3y) / Total Assets
+    # Captures operational risk/stability (Režňáková & Karas)
+    # Uses pre-computed EBITDA stored in _ebitda_temp column
+    ebitda_std_3y = _rolling_std(df["_ebitda_temp"], window=3)
+    new_features["ebitda_volatility"] = _safe_div(ebitda_std_3y, df["br09_tillgsu"])
 
     # EXCLUDED TEMPORAL FEATURES (based on nested CV analysis):
     # - Margin trends/volatility/averages: Static values + YoY changes are sufficient
@@ -544,6 +581,10 @@ def create_engineered_features(
     # Note: Raw rr_*/br_* columns (except KEPT_RAW_COLS) were already dropped after computing ratios
     # So drop_raw_sources parameter is now redundant, but we keep it for API compatibility
 
+    # Drop temporary columns used for intermediate calculations
+    temp_cols_to_drop = ["_ebitda_temp"]
+    df.drop(columns=[c for c in temp_cols_to_drop if c in df.columns], inplace=True, errors="ignore")
+
     # Note: Categorical dtypes are already set in make_dataset.py
     # They are preserved through parquet as dictionary<values=string>
 
@@ -553,7 +594,12 @@ def create_engineered_features(
     # any_event_last_5y: binary (0/1) already as Int8 (optimal)
 
     # Downcast float64 to float32 where precision not critical
-    float64_to_32 = ['revenue_drawdown_5y', 'dpo_days_trend_3y']
+    float64_to_32 = [
+        'revenue_drawdown_5y', 'dpo_days_trend_3y',
+        # V2 features
+        'working_capital_ta', 'retained_earnings_ta', 'interest_coverage',
+        'gross_margin', 'ebitda_volatility',
+    ]
     for col in float64_to_32:
         if col in df.columns and df[col].dtype == 'float64':
             df[col] = df[col].astype('float32')
@@ -564,7 +610,10 @@ def create_engineered_features(
     return df
 
 
-def prepare_modeling_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+def prepare_modeling_data(
+    df: pd.DataFrame,
+    features: Optional[list] = None,
+) -> Tuple[pd.DataFrame, pd.Series]:
     """
     Extract modeling features and target from a pre-filtered DataFrame.
 
@@ -574,13 +623,21 @@ def prepare_modeling_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
     Args:
         df: DataFrame with engineered features and target_next_year column.
             Should be pre-filtered by user (e.g., revenue threshold, SME category).
+        features: Optional list of features to use. If None, uses ACTIVE_FEATURES
+            from config (which respects ACTIVE_MODEL_VERSION setting).
 
     Returns:
-        X: Feature matrix view (FEATURES_FOR_MODEL columns)
+        X: Feature matrix view (selected feature columns)
         y: Target vector view (target_next_year)
     """
+    # Import here to avoid circular imports and get latest ACTIVE_FEATURES
+    from credit_risk_xai.config import ACTIVE_FEATURES
+
+    if features is None:
+        features = ACTIVE_FEATURES
+
     valid_mask = df["target_next_year"].notna()
-    X = df.loc[valid_mask, FEATURES_FOR_MODEL]
+    X = df.loc[valid_mask, features]
     y = df.loc[valid_mask, "target_next_year"]
     return X, y
 
