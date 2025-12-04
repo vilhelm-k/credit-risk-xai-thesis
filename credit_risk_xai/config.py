@@ -606,7 +606,7 @@ FEATURE_BOUNDS = {
     # =========================================================================
     'working_capital_ta': (-0.6, 0.8),   # Altman X1: P1=-0.61, P99=0.83; typical -60% to +80%
     'retained_earnings_ta': (-0.5, 0.8), # Altman X2: P1=-0.44, P99=0.79; typical -50% to +80%
-    'interest_coverage': (-50, 100),     # EBIT/Interest: P5=-23, P75=48; negative = loss
+    'interest_coverage': (-5, 20),       # Domain-clipped: [-5, 20] for logit stability
     'gross_margin': (0, 1),              # (Sales-COGS)/Sales: P5=0.10, P99=0.96; 0-100%
     'ebitda_volatility': (0, 0.6),       # StdDev(EBITDA)/TA: P1=0.003, P99=0.59; 0-60%
 

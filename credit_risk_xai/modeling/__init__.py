@@ -1,7 +1,23 @@
 """Model training, evaluation, and explainability utilities."""
 
 from .train import train_lightgbm, run_lightgbm_training  # noqa: F401
-from .evaluate import classification_summary, plot_roc_curve, plot_pr_curve  # noqa: F401
+from .evaluate import (  # noqa: F401
+    classification_summary,
+    plot_roc_curve,
+    plot_pr_curve,
+    compute_ece,
+    compute_calibration_metrics,
+)
+from .logit import (  # noqa: F401
+    CreditRiskLogit,
+    LogitPreprocessor,
+    DOMAIN_CLIP_BOUNDS,
+)
+from .ale import (  # noqa: F401
+    compute_ale_for_feature,
+    compute_ale_binary,
+    compute_ale_for_features,
+)
 from .explain import (  # noqa: F401
     compute_shap_values,
     plot_shap_summary,

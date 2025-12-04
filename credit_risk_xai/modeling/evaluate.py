@@ -6,8 +6,10 @@ from typing import Dict, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.calibration import calibration_curve
 from sklearn.metrics import (
     average_precision_score,
+    brier_score_loss,
     classification_report,
     confusion_matrix,
     precision_recall_curve,
@@ -82,3 +84,69 @@ def plot_pr_curve(
     ax.legend(loc="lower left")
     ax.grid(True, alpha=0.3)
     return ax
+
+
+def compute_ece(
+    y_true: np.ndarray,
+    y_pred_proba: np.ndarray,
+    n_bins: int = 100,
+) -> float:
+    """
+    Compute Expected Calibration Error (ECE).
+
+    ECE measures the average difference between predicted probabilities and
+    actual outcomes across probability bins. Lower values indicate better
+    calibration.
+
+    Parameters
+    ----------
+    y_true : np.ndarray
+        True binary labels (0 or 1).
+    y_pred_proba : np.ndarray
+        Predicted probabilities for the positive class.
+    n_bins : int
+        Number of bins for calibration curve. Default: 100.
+
+    Returns
+    -------
+    ece : float
+        Expected Calibration Error (0 = perfectly calibrated).
+
+    Examples
+    --------
+    >>> ece = compute_ece(y_val, model.predict_proba(X_val)[:, 1])
+    >>> print(f"ECE: {ece:.4f} - {'Well calibrated' if ece < 0.05 else 'Needs calibration'}")
+    """
+    fraction_of_positives, mean_predicted_value = calibration_curve(
+        y_true, y_pred_proba, n_bins=n_bins, strategy="quantile"
+    )
+    ece = float(np.mean(np.abs(fraction_of_positives - mean_predicted_value)))
+    return ece
+
+
+def compute_calibration_metrics(
+    y_true: np.ndarray,
+    y_pred_proba: np.ndarray,
+    n_bins: int = 100,
+) -> Dict[str, float]:
+    """
+    Compute calibration-related metrics.
+
+    Parameters
+    ----------
+    y_true : np.ndarray
+        True binary labels.
+    y_pred_proba : np.ndarray
+        Predicted probabilities for the positive class.
+    n_bins : int
+        Number of bins for ECE computation.
+
+    Returns
+    -------
+    metrics : dict
+        Dictionary with 'brier_score' and 'ece' keys.
+    """
+    return {
+        "brier_score": float(brier_score_loss(y_true, y_pred_proba)),
+        "ece": compute_ece(y_true, y_pred_proba, n_bins=n_bins),
+    }
