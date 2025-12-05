@@ -44,31 +44,35 @@ CMAP_DIVERGING = 'RdBu_r'
 # Figure Sizes (in inches, calibrated for LaTeX import)
 # =============================================================================
 
-# Standard figure sizes that produce good results at common LaTeX widths
-# Heights are calculated assuming ~1.3-1.5 aspect ratio for most plots
+# A4 paper: 210mm wide, 30mm margins each side → 150mm text width = 5.9in
+# Subfigures at 0.48\textwidth = 72mm = 2.83in
+# Standalone at 0.85\textwidth = 127.5mm = 5.02in
+#
+# IMPORTANT: Figures are sized at their ACTUAL final width so that fonts
+# render at the correct size without LaTeX scaling artifacts.
 
 FIGSIZE = {
-    # For 0.85-0.90\textwidth (standalone figures)
-    'standalone': (5.5, 3.8),
-    'standalone_tall': (5.5, 5.0),
-    'standalone_wide': (6.5, 3.5),
+    # For 0.85\textwidth standalone figures (~127mm = 5.0in)
+    'standalone': (5.0, 3.5),
+    'standalone_tall': (5.0, 4.5),
+    'standalone_wide': (5.9, 3.2),
 
-    # For 0.48\textwidth subfigures (side-by-side)
-    'subfigure': (3.2, 2.6),
-    'subfigure_square': (3.2, 3.0),
+    # For 0.48\textwidth subfigures (72mm = 2.83in) - ACTUAL SIZE
+    'subfigure': (2.83, 2.4),
+    'subfigure_square': (2.83, 2.83),
 
-    # For 0.70-0.75\textwidth (medium width)
-    'medium': (4.5, 3.2),
-    'medium_tall': (4.5, 4.5),
+    # For 0.70\textwidth (medium width, ~104mm = 4.1in)
+    'medium': (4.1, 2.9),
+    'medium_tall': (4.1, 4.0),
 
-    # For full-width complex figures
-    'full': (6.5, 4.5),
-    'full_tall': (6.5, 6.0),
+    # For full-width complex figures (1.0\textwidth = 5.9in)
+    'full': (5.9, 4.0),
+    'full_tall': (5.9, 5.5),
 
     # Multi-panel layouts
-    'panel_2x1': (6.5, 3.0),
-    'panel_1x2': (6.5, 2.8),
-    'panel_2x2': (6.5, 5.5),
+    'panel_2x1': (5.9, 2.8),
+    'panel_1x2': (5.9, 2.5),
+    'panel_2x2': (5.9, 5.0),
 }
 
 
@@ -76,23 +80,23 @@ FIGSIZE = {
 # Font Sizes (calibrated for 12pt thesis with footnotesize captions)
 # =============================================================================
 
-# When figures are scaled in LaTeX, these sizes produce readable text:
-# - At 0.48\textwidth: tick labels ~8pt, axis labels ~9pt
-# - At 0.85\textwidth: tick labels ~7-8pt, axis labels ~8-9pt
+# Since figures are now at ACTUAL size (no LaTeX scaling), font sizes
+# should match what you want in the final document.
+# Target: axis labels ~8-9pt, tick labels ~7-8pt in final PDF
 
 FONTSIZES = {
-    # For standalone/medium figures
+    # For standalone/medium figures (5.0in width)
     'title': 10,
     'axis_label': 9,
     'tick_label': 8,
     'legend': 8,
     'annotation': 8,
 
-    # For subfigures (slightly larger to compensate for scaling)
-    'subfig_title': 11,
-    'subfig_axis_label': 10,
-    'subfig_tick_label': 9,
-    'subfig_legend': 9,
+    # For subfigures (2.83in width) - smaller fonts for compact layout
+    'subfig_title': 9,
+    'subfig_axis_label': 8,
+    'subfig_tick_label': 7,
+    'subfig_legend': 7,
 }
 
 
@@ -185,9 +189,10 @@ def set_thesis_style(use_tex: bool = True) -> None:
 
 def set_subfigure_style() -> None:
     """
-    Adjust font sizes for subfigure panels (0.48 textwidth).
+    Adjust styling for subfigure panels (0.48 textwidth = 2.83in).
 
     Call this before creating figures that will be used as subfigures.
+    Configures smaller fonts and thinner lines appropriate for the compact size.
     """
     plt.rcParams.update({
         'axes.titlesize': FONTSIZES['subfig_title'],
@@ -196,6 +201,8 @@ def set_subfigure_style() -> None:
         'ytick.labelsize': FONTSIZES['subfig_tick_label'],
         'legend.fontsize': FONTSIZES['subfig_legend'],
         'figure.figsize': FIGSIZE['subfigure'],
+        'lines.linewidth': 1.2,
+        'lines.markersize': 4,
     })
 
 
@@ -208,6 +215,8 @@ def reset_to_standalone_style() -> None:
         'ytick.labelsize': FONTSIZES['tick_label'],
         'legend.fontsize': FONTSIZES['legend'],
         'figure.figsize': FIGSIZE['standalone'],
+        'lines.linewidth': 1.5,
+        'lines.markersize': 5,
     })
 
 
