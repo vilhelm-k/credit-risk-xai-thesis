@@ -6,7 +6,7 @@ credit risk modeling, including:
 - Domain-informed clipping for features with known economic bounds
 - Winsorization for remaining outliers
 - Robust scaling (IQR-based)
-- Target encoding for categorical features
+- Weight of Evidence (WoE) encoding for categorical features
 - Statsmodels GLM with HC3 robust standard errors
 
 The preprocessing is designed to keep the model interpretable while handling
@@ -139,53 +139,63 @@ class Winsorizer(BaseEstimator, TransformerMixin):
         return self.fit(X, y).transform(X)
 
 
-def target_encode_feature(
+def woe_encode_feature(
     train_series: pd.Series,
-    val_series: pd.Series,
     y_train: pd.Series,
-    smoothing: float = 10.0,
-) -> tuple[np.ndarray, np.ndarray, dict[str, float], float]:
+    smoothing: float = 0.5,
+) -> tuple[dict[str, float], float]:
     """
-    Apply target encoding with smoothing to a categorical feature.
+    Compute Weight of Evidence (WoE) encoding for a categorical feature.
+
+    WoE measures the predictive power of each category by comparing the
+    distribution of events (defaults) vs non-events within each category.
+
+    WoE_i = ln(Distribution of Events_i / Distribution of Non-Events_i)
+          = ln((n_events_i / total_events) / (n_non_events_i / total_non_events))
+
+    Positive WoE indicates higher-than-average default rate for that category.
+    Negative WoE indicates lower-than-average default rate.
 
     Parameters
     ----------
     train_series : pd.Series
         Training set categorical values.
-    val_series : pd.Series
-        Validation set categorical values.
     y_train : pd.Series
-        Training set target values.
+        Training set target values (0/1 for non-event/event).
     smoothing : float
-        Smoothing parameter (higher = more regularization toward global mean).
+        Laplace smoothing parameter to avoid division by zero and stabilize
+        estimates for rare categories (default: 0.5).
 
     Returns
     -------
-    train_encoded : np.ndarray
-        Encoded training values.
-    val_encoded : np.ndarray
-        Encoded validation values.
-    encoding_map : dict[str, float]
-        Mapping from category to encoded value.
-    global_mean : float
-        Global mean (used for unseen categories).
+    woe_map : dict[str, float]
+        Mapping from category to WoE value.
+    default_woe : float
+        Default WoE for unseen categories (0.0, indicating neutral).
     """
-    global_mean = float(y_train.mean())
-    train_df = pd.DataFrame({"cat": train_series.astype(str), "target": y_train.values})
-    agg = train_df.groupby("cat")["target"].agg(["mean", "count"])
-    smooth = (agg["count"] * agg["mean"] + smoothing * global_mean) / (
-        agg["count"] + smoothing
-    )
+    train_df = pd.DataFrame({
+        "cat": train_series.astype(str),
+        "target": y_train.values
+    })
 
-    train_encoded = train_series.astype(str).map(smooth).fillna(global_mean)
-    val_encoded = val_series.astype(str).map(smooth).fillna(global_mean)
+    total_events = train_df["target"].sum()
+    total_non_events = len(train_df) - total_events
 
-    return (
-        train_encoded.values,
-        val_encoded.values,
-        smooth.to_dict(),
-        global_mean,
-    )
+    agg = train_df.groupby("cat")["target"].agg(["sum", "count"])
+    agg.columns = ["events", "total"]
+    agg["non_events"] = agg["total"] - agg["events"]
+
+    # Apply Laplace smoothing and compute WoE
+    dist_events = (agg["events"] + smoothing) / (total_events + smoothing * len(agg))
+    dist_non_events = (agg["non_events"] + smoothing) / (total_non_events + smoothing * len(agg))
+
+    woe = np.log(dist_events / dist_non_events)
+    woe_map = woe.to_dict()
+
+    # Default WoE for unseen categories is 0 (neutral, equivalent to population average)
+    default_woe = 0.0
+
+    return woe_map, default_woe
 
 
 # =============================================================================
@@ -202,7 +212,7 @@ class LogitPreprocessor(BaseEstimator, TransformerMixin):
     2. Median imputation
     3. Winsorization (P1-P99)
     4. Robust scaling (IQR-based)
-    5. Target encoding for categoricals
+    5. Weight of Evidence (WoE) encoding for categoricals
 
     Parameters
     ----------
@@ -212,8 +222,8 @@ class LogitPreprocessor(BaseEstimator, TransformerMixin):
         Upper percentile for winsorization (default: 99).
     scaling_quantile_range : tuple[float, float]
         Quantile range for RobustScaler (default: (5.0, 95.0)).
-    target_encoding_smoothing : float
-        Smoothing parameter for target encoding (default: 10).
+    woe_smoothing : float
+        Laplace smoothing parameter for WoE encoding (default: 0.5).
     domain_clip_bounds : dict[str, tuple[float, float]] | None
         Custom domain clipping bounds (default: use DOMAIN_CLIP_BOUNDS).
     """
@@ -223,13 +233,13 @@ class LogitPreprocessor(BaseEstimator, TransformerMixin):
         lower_percentile: float = 1,
         upper_percentile: float = 99,
         scaling_quantile_range: tuple[float, float] = (5.0, 95.0),
-        target_encoding_smoothing: float = 10.0,
+        woe_smoothing: float = 0.5,
         domain_clip_bounds: dict[str, tuple[float, float]] | None = None,
     ):
         self.lower_percentile = lower_percentile
         self.upper_percentile = upper_percentile
         self.scaling_quantile_range = scaling_quantile_range
-        self.target_encoding_smoothing = target_encoding_smoothing
+        self.woe_smoothing = woe_smoothing
         self.domain_clip_bounds = domain_clip_bounds or DOMAIN_CLIP_BOUNDS
 
         # Fitted attributes
@@ -289,19 +299,18 @@ class LogitPreprocessor(BaseEstimator, TransformerMixin):
         )
         self.numeric_pipeline_.fit(X[self.numeric_features_])
 
-        # Fit target encoding for categoricals
+        # Fit WoE encoding for categoricals
         if self.categorical_features_:
             y_series = pd.Series(y) if not isinstance(y, pd.Series) else y
             self.cat_encodings_ = {}
 
             for cat_col in self.categorical_features_:
-                _, _, enc_map, default = target_encode_feature(
+                woe_map, default_woe = woe_encode_feature(
                     X[cat_col],
-                    X[cat_col],  # dummy for fitting
                     y_series,
-                    smoothing=self.target_encoding_smoothing,
+                    smoothing=self.woe_smoothing,
                 )
-                self.cat_encodings_[cat_col] = {"map": enc_map, "default": default}
+                self.cat_encodings_[cat_col] = {"map": woe_map, "default": default_woe}
 
         return self
 

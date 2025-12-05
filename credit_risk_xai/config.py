@@ -482,7 +482,7 @@ FEATURE_NAME_MAP = {
 
 # V2 (Altman/Ohlson aligned) feature set name mapping
 FEATURE_NAME_MAP_V2 = {
-    # Base Features (3)
+    # Base Features (2)
     'company_age': 'Company Age',
     'sni_group_3digit': 'Industry (SNI)',
     # Nyckeltal Ratios - Kept (7)

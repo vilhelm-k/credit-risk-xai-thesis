@@ -63,7 +63,7 @@ FIGSIZE = {
 
     # For 0.70\textwidth (medium width, ~104mm = 4.1in)
     'medium': (4.1, 2.9),
-    'medium_tall': (4.1, 4.0),
+    'medium_tall': (4.1, 3.7),
 
     # For full-width complex figures (1.0\textwidth = 5.9in)
     'full': (5.9, 4.0),
