@@ -1,3 +1,3 @@
 archetype,size,pct_of_defaults,mean_pd_pct,pd_category,top_risk_driver_1,top_risk_driver_2,top_risk_driver_3
-0,648,60.5,15.8,High PD (expected defaults),ny_avkegkap,ny_skuldgrd,dividend_yield
-1,423,39.5,4.5,Low PD (surprise defaults),dividend_yield,ny_avkegkap,company_age
+0,22867,37.6,4.3,Low PD (surprise defaults),ny_skuldgrd,dividend_yield,ratio_cash_liquidity
+1,37963,62.4,0.2,Low PD (surprise defaults),working_capital_ta,term_spread,ny_omsf

@@ -173,9 +173,22 @@ def compute_ale_binary(
     >>> print(f"Effect of paying dividends: {ale[1] - ale[0]:.4f}")
     """
     X_0 = X.copy()
-    X_0[feature] = 0
     X_1 = X.copy()
-    X_1[feature] = 1
+
+    # Preserve categorical dtype if present (critical for LightGBM)
+    original_dtype = X[feature].dtype
+    if hasattr(original_dtype, "categories"):
+        # Categorical column - need to use category codes
+        X_0[feature] = pd.Categorical.from_codes(
+            [0] * len(X), categories=original_dtype.categories
+        )
+        X_1[feature] = pd.Categorical.from_codes(
+            [1] * len(X), categories=original_dtype.categories
+        )
+    else:
+        # Non-categorical - simple assignment
+        X_0[feature] = 0
+        X_1[feature] = 1
 
     pred_0 = predict_fn(X_0)[:, 1].mean()
     pred_1 = predict_fn(X_1)[:, 1].mean()
