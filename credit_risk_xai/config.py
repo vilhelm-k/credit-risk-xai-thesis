@@ -573,7 +573,7 @@ FEATURE_BOUNDS = {
     'ny_kapomsh': (0.5, 8),         # Capital/Asset turnover: 0.5-8x is typical operating range
     'ny_rs': (0, 0.1),              # Interest rate on debt: 0-10% is typical
     'ny_skuldgrd': (0, 20),         # Debt ratio: 0-20 covers P95; higher values are extreme leverage
-    'ny_solid': (0, 0.8),           # Equity ratio: 0-80% (P95=0.74)
+    'ny_solid': (-0.1, 0.8),        # Equity ratio: 0-80% (P95=0.74)
     'ny_avkegkap': (-1, 1.5),       # ROE: -100% to +150% is economically meaningful
     'ny_kasslikv': (0.2, 4),        # Quick ratio: 0.2-4 covers normal operating range
     'ny_nettomarg': (-0.5, 0.35),   # Net margin: -50% to +35% covers P1-P99
