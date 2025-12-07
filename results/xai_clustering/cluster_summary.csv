@@ -1,3 +1,0 @@
-cluster,Size,Mean_PD_LightGBM,Median_PD_LightGBM,Std_PD_LightGBM,Min_PD_LightGBM,Max_PD_LightGBM,Mean_PD_Logit,Pct_of_Defaults
-0,22867,0.0429,0.0205,0.062,0.0006,0.6552,0.041,37.6
-1,37963,0.002,0.0009,0.0031,0.0001,0.0578,0.0036,62.4

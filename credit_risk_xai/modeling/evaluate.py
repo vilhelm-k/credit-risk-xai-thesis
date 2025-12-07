@@ -150,3 +150,58 @@ def compute_calibration_metrics(
         "brier_score": float(brier_score_loss(y_true, y_pred_proba)),
         "ece": compute_ece(y_true, y_pred_proba, n_bins=n_bins),
     }
+
+
+def compute_performance_metrics(
+    y_true: np.ndarray,
+    y_pred_proba: np.ndarray,
+) -> Dict[str, float]:
+    """
+    Compute comprehensive performance metrics for binary classification.
+
+    Parameters
+    ----------
+    y_true : np.ndarray
+        True binary labels (0 or 1).
+    y_pred_proba : np.ndarray
+        Predicted probabilities for the positive class.
+
+    Returns
+    -------
+    metrics : dict
+        Dictionary with 'AUC', 'PR-AUC', 'Brier Score', and 'ECE' keys.
+    """
+    return {
+        "AUC": roc_auc_score(y_true, y_pred_proba),
+        "PR-AUC": average_precision_score(y_true, y_pred_proba),
+        "Brier Score": brier_score_loss(y_true, y_pred_proba),
+        "ECE": compute_ece(y_true, y_pred_proba),
+    }
+
+
+def calculate_shap_importance(
+    shap_values: np.ndarray,
+    feature_names: list[str],
+) -> pd.DataFrame:
+    """
+    Calculate mean absolute SHAP importance for features.
+
+    Parameters
+    ----------
+    shap_values : np.ndarray
+        SHAP values array of shape (n_samples, n_features).
+    feature_names : list[str]
+        List of feature names corresponding to columns of shap_values.
+
+    Returns
+    -------
+    importance : pd.DataFrame
+        DataFrame with 'feature' and 'importance' columns, sorted by
+        descending importance (mean absolute SHAP value).
+    """
+    importance = pd.DataFrame({
+        "feature": feature_names,
+        "importance": np.abs(shap_values).mean(axis=0),
+    }).sort_values("importance", ascending=False)
+
+    return importance
