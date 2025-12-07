@@ -1,6 +1,6 @@
 # Feature Definitions (V2 Model)
 
-This document describes the 22 features used in the V2 credit risk model, which is aligned with the Altman Z-score and Ohlson O-score frameworks.
+This document describes the 22 features used in the V2 credit risk model.
 
 ## Summary
 
@@ -22,7 +22,7 @@ This document describes the 22 features used in the V2 credit risk model, which 
 | Feature | Display Name | Definition | Units |
 |---------|--------------|------------|-------|
 | `company_age` | Company Age | Years since company registration date | years |
-| `sni_group_3digit` | Industry (SNI) | 3-digit SNI (Swedish Standard Industrial Classification) code, ~267 categories | categorical |
+| `sni_group_3digit` | Industry (SNI) | 3-digit SNI (Swedish Standard Industrial Classification) code | categorical |
 
 ---
 
