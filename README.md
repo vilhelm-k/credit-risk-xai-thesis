@@ -86,7 +86,7 @@ python3 credit_risk_xai/data/make_macro.py     # Lending rates CSV → macro par
 ### 1. Create and activate a virtual environment
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
