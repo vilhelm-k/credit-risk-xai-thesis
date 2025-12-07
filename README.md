@@ -5,9 +5,11 @@ A Bachelor's thesis on applying explainable AI (SHAP, ALE) to corporate credit r
 ## Requirements
 
 - Python 3.12
-- Raw data files (not included in repository):
-  - 10 Serrano dataset files: `serrano1.dta` through `serrano10.dta` (place in `data/raw/`)
-  - 4 macroeconomic CSV files from SCB (place in `data/external/`)
+- One of:
+  - Raw data files (not included in repository):
+    - 10 Serrano dataset files: `serrano1.dta` through `serrano10.dta` (place in `data/raw/`)
+    - 4 macroeconomic CSV files from SCB (place in `data/external/`)
+  - Processed data file (notebooks can be run directly)
 
 ## Setup
 
