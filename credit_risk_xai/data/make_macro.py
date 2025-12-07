@@ -2,12 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 import pandas as pd
-import typer
 from loguru import logger
 
 from credit_risk_xai.config import EXTERNAL_DATA_DIR, MACRO_CACHE_PATH
-
-app = typer.Typer(help="Commands for aggregating macroeconomic datasets.")
 
 
 def build_macro_summary(
@@ -143,15 +140,5 @@ def _load_unemployment(path: Path) -> pd.DataFrame:
     return df
 
 
-@app.command()
-def main(
-    data_dir: Path = typer.Option(EXTERNAL_DATA_DIR, help="Directory with macro CSV files."),
-    output_path: Path = typer.Option(MACRO_CACHE_PATH, help="Destination parquet file."),
-    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing cache."),
-) -> None:
-    """CLI wrapper for building the macroeconomic summary parquet."""
-    build_macro_summary(data_dir=data_dir, output_path=output_path, force=force)
-
-
 if __name__ == "__main__":
-    app()
+    build_macro_summary()

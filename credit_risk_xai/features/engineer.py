@@ -6,7 +6,6 @@ from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
-import typer
 from loguru import logger
 from numba import njit
 
@@ -20,8 +19,6 @@ from credit_risk_xai.config import (
     NY_COLS,
     RR_SOURCE_COLS,
 )
-
-app = typer.Typer(help="Feature engineering commands.")
 
 
 # -----------------------------------------------------------------------------
@@ -676,16 +673,5 @@ def build_feature_matrix(
     return output_path
 
 
-@app.command()
-def main(
-    base_path: Path = typer.Option(BASE_CACHE_PATH, help="Input parquet from make_dataset."),
-    macro_path: Path = typer.Option(MACRO_CACHE_PATH, help="Macro parquet (optional)."),
-    output_path: Path = typer.Option(FEATURE_CACHE_PATH, help="Destination feature parquet."),
-    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing cache."),
-) -> None:
-    """CLI entry-point to engineer features from interim caches."""
-    build_feature_matrix(base_path=base_path, macro_path=macro_path, output_path=output_path, force=force)
-
-
 if __name__ == "__main__":
-    app()
+    build_feature_matrix()

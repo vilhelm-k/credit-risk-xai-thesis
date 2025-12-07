@@ -1,10 +1,6 @@
 loguru
-mkdocs
-pip
 python-dotenv
 ruff
-tqdm
-typer
 pandas
 numpy
 numba
@@ -13,7 +9,6 @@ scikit-learn
 lightgbm
 xgboost
 optuna
-mlflow
 shap
 matplotlib
 wandb
@@ -21,5 +16,4 @@ seaborn
 scipy
 umap-learn
 alibi
-optbinning
 -e .

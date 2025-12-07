@@ -6,7 +6,6 @@ from typing import Iterable
 
 import numpy as np
 import pandas as pd
-import typer
 from loguru import logger
 
 from credit_risk_xai.config import (
@@ -17,8 +16,6 @@ from credit_risk_xai.config import (
     RAW_DATA_DIR,
     SME_CATEGORIES,
 )
-
-app = typer.Typer(help="Commands for building interim Serrano datasets.")
 
 
 def classify_sme_eu_vectorized(
@@ -212,15 +209,5 @@ def generate_serrano_base(
     return output_path
 
 
-@app.command()
-def main(
-    raw_dir: Path = typer.Option(RAW_DATA_DIR, help="Directory containing raw Serrano .dta files."),
-    output_path: Path = typer.Option(BASE_CACHE_PATH, help="Destination parquet path."),
-    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing cache."),
-) -> None:
-    """CLI wrapper for generating the interim Serrano dataset."""
-    generate_serrano_base(raw_dir=raw_dir, output_path=output_path, force=force)
-
-
 if __name__ == "__main__":
-    app()
+    generate_serrano_base()

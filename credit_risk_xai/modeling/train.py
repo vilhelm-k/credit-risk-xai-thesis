@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-import json
 import time
-from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
-import typer
 import wandb
 from wandb.integration.lightgbm import wandb_callback, log_summary
-from loguru import logger
 from sklearn.metrics import (
     average_precision_score,
     brier_score_loss,
@@ -19,15 +15,13 @@ from sklearn.metrics import (
     f1_score,
     classification_report,
     log_loss,
-    precision_recall_curve,
     precision_score,
     recall_score,
     roc_auc_score,
 )
 from sklearn.calibration import calibration_curve
 
-from credit_risk_xai.config import FEATURE_CACHE_PATH, FEATURES_FOR_MODEL, PROJ_ROOT
-from credit_risk_xai.features.engineer import prepare_modeling_data
+from credit_risk_xai.config import PROJ_ROOT
 from credit_risk_xai.modeling.utils import split_train_validation
 from wandb.sdk.wandb_run import Run
 
@@ -337,66 +331,3 @@ def run_lightgbm_training(
     return results
 
 
-app = typer.Typer()
-
-
-@app.command()
-def train(
-    feature_path: Path = typer.Option(FEATURE_CACHE_PATH, help="Path to features parquet."),
-    dataset_description: Optional[str] = typer.Option(
-        None, help="Optional free-text description of dataset filters."
-    ),
-    eval_metric: str = typer.Option("logloss"),
-    test_size: float = typer.Option(0.2),
-    random_state: int = typer.Option(42),
-    early_stopping_rounds: int = typer.Option(50),
-    log_frequency: int = typer.Option(50),
-    use_wandb: bool = typer.Option(False, help="Enable Weights & Biases logging."),
-    wandb_project: Optional[str] = typer.Option(None),
-    wandb_entity: Optional[str] = typer.Option(None),
-    wandb_run_name: Optional[str] = typer.Option(None),
-    wandb_tags: Optional[str] = typer.Option(None, help="Comma separated tags."),
-    params: Optional[str] = typer.Option(None, help="JSON dict of LightGBM params."),
-) -> None:
-    if not feature_path.exists():
-        raise FileNotFoundError(f"Feature matrix not found: {feature_path}")
-
-    df = pd.read_parquet(feature_path)
-    parsed_params = json.loads(params) if params else None
-    tag_list = [tag.strip() for tag in wandb_tags.split(",")] if wandb_tags else None
-
-    filtered_df, default_desc = apply_default_filters(df)
-    if dataset_description is None:
-        dataset_description = default_desc
-    X, y = prepare_modeling_data(filtered_df)
-
-    results = run_lightgbm_training(
-        X=X,
-        y=y,
-        dataset_description=dataset_description,
-        params=parsed_params,
-        eval_metric=eval_metric,
-        test_size=test_size,
-        random_state=random_state,
-        early_stopping_rounds=early_stopping_rounds,
-        log_frequency=log_frequency,
-        use_wandb=use_wandb,
-        wandb_project=wandb_project,
-        wandb_entity=wandb_entity,
-        wandb_run_name=wandb_run_name,
-        wandb_tags=tag_list,
-    )
-
-    metrics = results["metrics"]
-    logger.info(
-        "Validation metrics | AUC %.4f | PR-AUC %.4f | LogLoss %.4f | Precision@0.5 %.3f | Recall@0.5 %.3f",
-        metrics["roc_auc"],
-        metrics["pr_auc"],
-        metrics["logloss"],
-        metrics["precision@0.5"],
-        metrics["recall@0.5"],
-    )
-
-
-if __name__ == "__main__":
-    app()

@@ -15,7 +15,7 @@ def compute_shap_values(model, X: pd.DataFrame, max_samples: int = 2_000):
 
     Parameters
     ----------
-    model : LightGBM/XGBoost model with `predict` interface.
+    model : LightGBM model with `predict` interface.
     X : pd.DataFrame
         Feature matrix.
     max_samples : int
@@ -77,7 +77,6 @@ def get_feature_importance(
         Type of feature importance to extract:
         - 'split': Number of times feature is used in a split
         - 'gain': Total gain of splits using the feature
-        - 'cover': Total coverage of splits using the feature (XGBoost only)
     top_n : int, optional
         Return only top N features. If None, returns all features.
 
@@ -225,7 +224,7 @@ def get_shap_feature_importance(
 
     Parameters
     ----------
-    model : LightGBM/XGBoost model
+    model : LightGBM model
         Fitted tree-based model.
     X : pd.DataFrame
         Feature matrix.

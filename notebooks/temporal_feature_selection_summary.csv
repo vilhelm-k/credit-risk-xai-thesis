@@ -1,9 +1,0 @@
-,Value
-Original Temporal Features,34
-After Window Selection,17
-After Metric Prioritization,13
-Total Reduction,21
-Reduction %,61.8%
-Original AUC,0.959206
-Final AUC,0.962497
-AUC Change,+0.003290
