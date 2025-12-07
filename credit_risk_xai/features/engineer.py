@@ -181,42 +181,6 @@ def _compute_cagr(series: pd.Series, periods: int) -> pd.Series:
     return cagr.where(mask, np.nan)
 
 
-def _rolling_beta(
-    dependent: pd.Series,
-    benchmark: pd.Series,
-    window: int,
-    min_periods: Optional[int] = None,
-) -> pd.Series:
-    """Rolling OLS beta of dependent versus benchmark for each entity."""
-    if min_periods is None:
-        min_periods = window
-
-    valid_mask = (~dependent.isna()) & (~benchmark.isna())
-    if not valid_mask.any():
-        return pd.Series(np.nan, index=dependent.index)
-
-    dependent_valid = dependent.where(valid_mask)
-    benchmark_valid = benchmark.where(valid_mask)
-
-    group = lambda s: s.groupby(level=0, group_keys=False)
-
-    count = group(valid_mask).rolling(window=window, min_periods=1).sum()
-    sum_dep = group(dependent_valid).rolling(window=window, min_periods=1).sum()
-    sum_bench = group(benchmark_valid).rolling(window=window, min_periods=1).sum()
-    sum_cross = group(dependent_valid * benchmark_valid).rolling(window=window, min_periods=1).sum()
-    sum_bench_sq = group(benchmark_valid.pow(2)).rolling(window=window, min_periods=1).sum()
-
-    numerator = sum_cross - (sum_dep * sum_bench) / count
-    denominator = sum_bench_sq - (sum_bench * sum_bench) / count
-
-    denominator = denominator.mask(denominator.abs() < 1e-12)
-    beta = numerator / denominator
-    beta = beta.where(count >= min_periods)
-    beta = beta.replace([np.inf, -np.inf], np.nan)
-
-    return beta.droplevel(0).reindex(dependent.index)
-
-
 # -----------------------------------------------------------------------------
 # Feature engineering core
 # -----------------------------------------------------------------------------
@@ -493,31 +457,7 @@ def create_engineered_features(
     for col in macro_aligned.columns:
         df[col] = macro_matched[col].values
 
-    # df["real_revenue_growth"] = (
-    #     df["rr01_ntoms_yoy_pct"] - df["inflation_yoy"]
-    # ) # REMOVED: Redundant with ny_omsf
-    # df["revenue_vs_gdp"] = (  # REMOVED: Nearly identical to real_revenue_growth (r=0.999996)
-    #     df["rr01_ntoms_yoy_pct"] - df["gdp_growth"]
-    # )
-    # df["profit_vs_gdp"] = (
-    #     df["rr07_rorresul_yoy_pct"] - df["gdp_growth"]
-    # ) # REMOVED: Redundant
-
-    # Compute revenue beta (cyclicality): beta = cov(revenue, gdp) / var(gdp)
-    # Beta interpretation: For every 1% GDP growth, revenue grows by beta%
-    # Beta > 1: Cyclical (high risk), Beta < 1: Defensive (low risk)
-    # Note: This is the OLS slope coefficient from regressing revenue growth on GDP growth
-
-    logger.info("Calculating rolling revenue beta (streaming sums)")
-    # Use ny_omsf (revenue growth) instead of rr01_ntoms_yoy_pct (r=1.0, identical)
-    df["revenue_beta_gdp_5y"] = _rolling_beta(
-        df["ny_omsf"],
-        df["gdp_growth"],
-        window=5,
-        min_periods=4,
-    )
-
-    logger.info("Macro indicators merged (including revenue beta)")
+    logger.info("Macro indicators merged (term_spread)")
 
     # -------------------------------------------------------------------------
     # Remove duplicate accounting year observations (data leakage fix)
