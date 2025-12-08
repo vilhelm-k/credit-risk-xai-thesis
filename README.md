@@ -1,6 +1,6 @@
-# Explainable AI for Credit Risk Prediction
+# Drivers of Default Risk in Swedish SMEs
 
-**Thesis Title**: Explainable AI for Credit Risk Prediction: A Study of Swedish SMEs Using LightGBM and SHAP
+**Thesis Title**: Drivers of Default Risk in Swedish SMEs: A Machine Learning Approach with Explainable AI
 
 **Authors**: Vilhelm Karlin, Minna Olsson
 
@@ -115,6 +115,8 @@ Execute the notebooks in order to reproduce all figures and tables:
 | `notebooks/00_data_exploration.ipynb` | Descriptive statistics, filter analysis | `figures/default_rate_by_year.pdf`, `tables/descriptive_stats.tex` |
 | `notebooks/05a_xai_global.ipynb` | Global XAI analysis (SHAP, ALE) | `figures/roc_curve.pdf`, `figures/calibration_curve.pdf`, `figures/shap_*.pdf`, `figures/ale_*.pdf`, `figures/interaction_*.pdf` |
 | `notebooks/05b_xai_temporal.ipynb` | Temporal XAI analysis | `figures/temporal_*.pdf` |
+
+**Note on LaTeX rendering**: The notebooks use `set_thesis_style(use_tex=True)` for publication-quality figures. If you don't have LaTeX installed locally, change this to `set_thesis_style(use_tex=False)` at the top of each notebook.
 
 ---
 

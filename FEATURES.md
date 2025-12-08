@@ -48,7 +48,7 @@ These are standard Swedish financial ratios from the Serrano database nyckeltal 
 |---------|--------------|---------|---------------|-------|
 | `log_total_assets` | Log Total Assets | log(1 + Total Assets) | `log1p(br09_tillgsu)` | log(kSEK) |
 
-**Note**: Total assets are in thousands of SEK (kSEK). The log transformation addresses right-skewness typical of firm size distributions. This corresponds to Ohlson's Size measure (W).
+**Note**: Total assets are in thousands of SEK (kSEK). The log transformation addresses right-skewness typical of firm size distributions. 
 
 ---
 

@@ -16,4 +16,5 @@ seaborn
 scipy
 umap-learn
 alibi
+statsmodels
 -e .
